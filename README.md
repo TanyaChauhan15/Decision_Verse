@@ -38,7 +38,7 @@ The system combines these dimensions using dynamically calculated weights based 
 
 1. The user describes a decision scenario.
 2. The system extracts the available options and user priorities.
-3. Specialized AI agents independently analyze different aspects of the decision.
+3. Specialized AI agents analyze different aspects of the decision.
 4. Dynamic weights are assigned according to the user's priorities.
 5. Agent scores are combined using a weighted scoring engine.
 6. Financial outcomes are projected over five years.
@@ -76,20 +76,54 @@ For each decision, DecisionVerse provides:
 ```bash
 git clone <your-repository-url>
 cd DecisionVerse
+```
 
-2. Install dependencies
+### 2. Install dependencies
+
+```bash
 pip install -r requirements.txt
+```
 
-3. Add your Groq API key
+### 3. Add your Groq API key
 
-Create a .env file in the project root:
+Create a `.env` file in the project root:
 
+```env
 GROQ_API_KEY=your_groq_api_key
-4. Run the application
+```
+
+### 4. Run the application
+
+```bash
 streamlit run app.py
+```
 
 The application will open in your browser.
 
+## Project Structure
+
+```text
+DecisionVerse/
+│
+├── agents/
+│   ├── career.py
+│   ├── finance.py
+│   ├── lifestyle.py
+│   ├── risk.py
+│   ├── simulation.py
+│   └── decision.py
+│
+├── graph/
+│   └── workflow.py
+│
+├── app.py
+├── requirements.txt
+└── .env
+```
+
+## Example Input
+
+```text
 I have two job offers.
 
 Option A:
@@ -105,3 +139,16 @@ Location: Hyderabad
 Work Mode: Office
 
 My priorities are career growth, savings, learning, and low risk.
+```
+
+## Future Improvements
+
+- Integration with real-time financial and market data
+- More decision domains
+- User-specific decision history
+- Advanced scenario modeling
+- Additional visualization and analytics
+
+## Author
+
+Tanya Chauhan
