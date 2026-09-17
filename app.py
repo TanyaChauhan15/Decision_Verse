@@ -16,7 +16,7 @@ def load_graph():
 def show_score_bar(label, score):
     try:
         score = float(score)
-    except:
+    except (TypeError, ValueError):
         score = 0
 
     st.write(f"**{label}**")
@@ -33,6 +33,17 @@ def show_list(title, items):
             st.write("- " + str(item))
 
 
+def get_option_names(result):
+    """
+    Single source of truth for which options to render.
+    Derived from result["options"] instead of a hardcoded
+    ["Option A", "Option B"], so this scales to any number
+    of options the extractor found.
+    """
+    names = [opt.get("name") for opt in result.get("options", []) if opt.get("name")]
+    return names or ["Option A", "Option B"]
+
+
 st.title("🧠 DecisionVerse")
 st.subheader("Multi-Agent Decision Intelligence System")
 
@@ -40,6 +51,13 @@ st.write(
     "DecisionVerse helps users evaluate high-impact decisions using specialized agents "
     "for career, finance, lifestyle, risk, simulation, and final recommendation."
 )
+
+with st.sidebar:
+    st.header("Developer")
+    if st.button("🔄 Reload agents (clear cache)"):
+        st.cache_resource.clear()
+        st.success("Cache cleared. The graph will be rebuilt from current code on the next analysis.")
+    show_debug = st.checkbox("Show debug state", value=False)
 
 sample = """
 I have two job offers.
@@ -76,6 +94,11 @@ if st.button("Analyze Decision"):
             }
 
             result = graph.invoke(state)
+            if show_debug:
+                st.write("DEBUG STATE")
+                st.json(result)
+
+        option_names = get_option_names(result)
 
         final = result.get("final_decision", {})
         scores = final.get("overall_scores", {})
@@ -112,37 +135,38 @@ if st.button("Analyze Decision"):
 
         st.subheader("Transparent Score Breakdown")
 
-        for option in ["Option A", "Option B"]:
-         st.write(f"### {option}")
+        for option in option_names:
+            st.write(f"### {option}")
 
-         rows = []
-         data = breakdown.get(option, {})
+            rows = []
+            data = breakdown.get(option, {})
 
-         for metric in ["Career", "Finance", "Lifestyle", "Risk"]:
-          item = data.get(metric, {})
-          rows.append({
-            "Metric": metric,
-            "Raw Score": item.get("raw_score", 0),
-            "Weight": item.get("weight", 0),
-            "Contribution": item.get("contribution", 0)
-         })
+            for metric in ["Career", "Finance", "Lifestyle", "Risk"]:
+                item = data.get(metric, {})
+                rows.append({
+                    "Metric": metric,
+                    "Raw Score": item.get("raw_score", 0),
+                    "Weight": item.get("weight", 0),
+                    "Contribution": item.get("contribution", 0)
+                })
 
-         rows.append({
-            "Metric": "Total",
-            "Raw Score": "-",
-            "Weight": "-",
-             "Contribution": data.get("Total", 0)
-         })
+            rows.append({
+                "Metric": "Total",
+                "Raw Score": "-",
+                "Weight": "-",
+                "Contribution": data.get("Total", 0)
+            })
 
-         st.table(rows)
+            st.table(rows)
 
-         score_col1, score_col2 = st.columns(2)
-
-        with score_col1:
-            show_score_bar("Option A", scores.get("Option A", 0))
-
-        with score_col2:
-            show_score_bar("Option B", scores.get("Option B", 0))
+        # Score bars: one column per option, rendered after the loop above.
+        # Previously this only showed a leftover Option A/B pair from the
+        # last loop iteration, because the columns were created inside the
+        # loop but rendered with "with score_col1/2" outside it.
+        score_cols = st.columns(len(option_names))
+        for col, option in zip(score_cols, option_names):
+            with col:
+                show_score_bar(option, scores.get(option, 0))
 
         st.subheader("Scoring Weights")
         weights = result.get("scoring_weights", {})
@@ -162,21 +186,14 @@ if st.button("Analyze Decision"):
 
         st.header("🧮 Agent Score Comparison")
 
-        score_table = {
-            "Metric": ["Career", "Finance", "Lifestyle", "Risk"],
-            "Option A": [
-                career.get("Option A", {}).get("career_score", 0),
-                finance.get("Option A", {}).get("finance_score", 0),
-                lifestyle.get("Option A", {}).get("lifestyle_score", 0),
-                risk.get("Option A", {}).get("risk_score", 0),
-            ],
-            "Option B": [
-                career.get("Option B", {}).get("career_score", 0),
-                finance.get("Option B", {}).get("finance_score", 0),
-                lifestyle.get("Option B", {}).get("lifestyle_score", 0),
-                risk.get("Option B", {}).get("risk_score", 0),
-            ],
-        }
+        score_table = {"Metric": ["Career", "Finance", "Lifestyle", "Risk"]}
+        for option in option_names:
+            score_table[option] = [
+                career.get(option, {}).get("career_score", 0),
+                finance.get(option, {}).get("finance_score", 0),
+                lifestyle.get(option, {}).get("lifestyle_score", 0),
+                risk.get(option, {}).get("risk_score", 0),
+            ]
 
         st.table(score_table)
         st.markdown("---")
@@ -186,7 +203,7 @@ if st.button("Analyze Decision"):
         with left:
             st.header("💼 Career Analysis")
 
-            for option in ["Option A", "Option B"]:
+            for option in option_names:
                 data = career.get(option, {})
                 st.subheader(option)
                 show_score_bar("Career Score", data.get("career_score", 0))
@@ -196,7 +213,7 @@ if st.button("Analyze Decision"):
 
             st.header("💰 Finance Analysis")
 
-            for option in ["Option A", "Option B"]:
+            for option in option_names:
                 data = finance.get(option, {})
 
                 st.subheader(option)
@@ -260,7 +277,7 @@ if st.button("Analyze Decision"):
         with right:
             st.header("🏙️ Lifestyle Analysis")
 
-            for option in ["Option A", "Option B"]:
+            for option in option_names:
                 data = lifestyle.get(option, {})
                 st.subheader(option)
                 show_score_bar("Lifestyle Score", data.get("lifestyle_score", 0))
@@ -270,7 +287,7 @@ if st.button("Analyze Decision"):
 
             st.header("⚠️ Risk Analysis")
 
-            for option in ["Option A", "Option B"]:
+            for option in option_names:
                 data = risk.get(option, {})
                 st.subheader(option)
                 show_score_bar("Risk Safety Score", data.get("risk_score", 0))
@@ -300,13 +317,10 @@ if st.button("Analyze Decision"):
                 st.write(f"**Risk:** {year_data.get('risk', 'Not available')}")
                 st.divider()
 
-        sim_col1, sim_col2 = st.columns(2)
-
-        with sim_col1:
-            show_timeline("Option A", simulation.get("Option A", {}))
-
-        with sim_col2:
-            show_timeline("Option B", simulation.get("Option B", {}))
+        sim_cols = st.columns(len(option_names))
+        for col, option in zip(sim_cols, option_names):
+            with col:
+                show_timeline(option, simulation.get(option, {}))
 
         st.markdown("---")
 

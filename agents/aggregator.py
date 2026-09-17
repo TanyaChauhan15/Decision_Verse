@@ -1,7 +1,7 @@
-def get_score(data, option, key, default=5):
+def get_score(data, option, key, default=0):
     try:
         return float(data.get(option, {}).get(key, default))
-    except:
+    except (TypeError, ValueError):
         return default
 
 
@@ -10,35 +10,42 @@ def priority_value(value):
 
     if "high" in value:
         return 3
+
     if "medium" in value or "moderate" in value:
         return 2
+
     if "low" in value:
-        return 1
-    if "not specified" in value or value.strip() == "":
         return 1
 
     return 1
 
 
 def compute_dynamic_weights(priorities):
+
     career_weight = (
-        priority_value(priorities.get("career_growth", "")) +
-        priority_value(priorities.get("learning", ""))
+        priority_value(priorities.get("career_growth"))
+        + priority_value(priorities.get("learning"))
     )
 
-    finance_weight = priority_value(priorities.get("savings", ""))
+    finance_weight = priority_value(
+        priorities.get("savings")
+    )
 
-    lifestyle_weight = priority_value(priorities.get("work_life_balance", ""))
+    lifestyle_weight = priority_value(
+        priorities.get("work_life_balance")
+    )
 
-    risk_raw = priority_value(priorities.get("risk_tolerance", ""))
+    risk_value = str(
+        priorities.get("risk_tolerance", "")
+    ).lower()
 
-    # Low risk tolerance means risk should matter more
-    if "low" in str(priorities.get("risk_tolerance", "")).lower():
+    # Low risk tolerance = risk receives greater importance
+    if "low" in risk_value:
         risk_weight = 3
-    elif "medium" in str(priorities.get("risk_tolerance", "")).lower() or "moderate" in str(priorities.get("risk_tolerance", "")).lower():
+    elif "medium" in risk_value or "moderate" in risk_value:
         risk_weight = 2
     else:
-        risk_weight = risk_raw
+        risk_weight = 1
 
     weights = {
         "career": career_weight,
@@ -49,14 +56,6 @@ def compute_dynamic_weights(priorities):
 
     total = sum(weights.values())
 
-    if total == 0:
-        return {
-            "career": 0.35,
-            "finance": 0.25,
-            "lifestyle": 0.20,
-            "risk": 0.20
-        }
-
     return {
         key: round(value / total, 2)
         for key, value in weights.items()
@@ -64,6 +63,7 @@ def compute_dynamic_weights(priorities):
 
 
 def aggregate_analysis(state):
+
     return {
         "combined_analysis": {
             "career": state.get("career_analysis", {}),
@@ -74,6 +74,7 @@ def aggregate_analysis(state):
 
 
 def compute_overall_scores(state):
+
     career = state.get("career_analysis", {})
     finance = state.get("finance_analysis", {})
     lifestyle = state.get("lifestyle_analysis", {})
@@ -85,11 +86,30 @@ def compute_overall_scores(state):
     scores = {}
     breakdown = {}
 
-    for option in ["Option A", "Option B"]:
-        career_score = get_score(career, option, "career_score")
-        finance_score = get_score(finance, option, "finance_score")
-        lifestyle_score = get_score(lifestyle, option, "lifestyle_score")
-        risk_score = get_score(risk, option, "risk_score")
+    # Was hardcoded to ["Option A", "Option B"] - now scales to any number
+    # of options actually present in state, falling back to A/B only if
+    # state["options"] is somehow missing.
+    option_names = [
+        opt.get("name") for opt in state.get("options", []) if opt.get("name")
+    ] or ["Option A", "Option B"]
+
+    for option in option_names:
+
+        career_score = get_score(
+            career, option, "career_score"
+        )
+
+        finance_score = get_score(
+            finance, option, "finance_score"
+        )
+
+        lifestyle_score = get_score(
+            lifestyle, option, "lifestyle_score"
+        )
+
+        risk_score = get_score(
+            risk, option, "risk_score"
+        )
 
         career_contribution = career_score * weights["career"]
         finance_contribution = finance_score * weights["finance"]
@@ -97,10 +117,10 @@ def compute_overall_scores(state):
         risk_contribution = risk_score * weights["risk"]
 
         overall = (
-            career_contribution +
-            finance_contribution +
-            lifestyle_contribution +
-            risk_contribution
+            career_contribution
+            + finance_contribution
+            + lifestyle_contribution
+            + risk_contribution
         )
 
         scores[option] = round(overall, 2)
@@ -129,7 +149,11 @@ def compute_overall_scores(state):
             "Total": round(overall, 2)
         }
 
-    recommended = max(scores, key=scores.get)
+    # Only recommend if valid scores exist
+    if all(score == 0 for score in scores.values()):
+        recommended = ""
+    else:
+        recommended = max(scores, key=scores.get)
 
     return {
         "overall_scores": scores,

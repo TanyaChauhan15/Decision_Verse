@@ -5,7 +5,7 @@ from utils.json_parser import parse_json_response
 load_dotenv()
 
 llm = ChatGroq(
-    model="llama-3.1-8b-instant",
+    model="openai/gpt-oss-20b",
     temperature=0,
     max_tokens=300
 )

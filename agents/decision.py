@@ -5,45 +5,72 @@ from utils.json_parser import parse_json_response
 load_dotenv()
 
 llm = ChatGroq(
-    model="llama-3.1-8b-instant",
+    model="openai/gpt-oss-20b",
     temperature=0,
-    max_tokens=300
+    max_tokens=400
 )
 
 
 def make_final_decision(state):
-    overall_scores = state.get("overall_scores", {})
-    recommended_option = state.get("recommended_option", "")
+
+    scores = state.get("overall_scores", {})
+    recommended = state.get("recommended_option", "")
 
     prompt = f"""
-Return ONLY valid JSON.
+You are the Final Decision Agent.
 
-Decision Type: {state.get("decision_type", "")}
-Recommended Option: {recommended_option}
-Overall Scores: {overall_scores}
-User Priorities: {state.get("priorities", {})}
+Decision Type:
+{state.get("decision_type", "")}
 
-Write a short final explanation.
+User Priorities:
+{state.get("priorities", {})}
 
-JSON format:
+Overall Scores:
+{scores}
+
+Recommended Option from scoring engine:
+{recommended}
+
+Career:
+{state.get("career_analysis", {})}
+
+Finance:
+{state.get("finance_analysis", {})}
+
+Lifestyle:
+{state.get("lifestyle_analysis", {})}
+
+Risk:
+{state.get("risk_analysis", {})}
+
+Explain the result briefly.
+
+IMPORTANT:
+- Do not change the recommended option.
+- Do not invent facts.
+- Mention the main trade-off.
+- Keep the response concise.
+
+Return ONLY JSON:
+
 {{
-  "confidence": 0.8,
+  "confidence": 0.0,
   "reason": "",
   "key_tradeoffs": ["", ""],
-  "next_steps": ["", "", ""]
+  "next_steps": ["", ""]
 }}
 """
 
     response = llm.invoke(prompt)
     explanation = parse_json_response(response.content)
 
-    final = {
-        "recommended_option": recommended_option,
-        "overall_scores": overall_scores,
-        "confidence": explanation.get("confidence", 0.8),
-        "reason": explanation.get("reason", ""),
-        "key_tradeoffs": explanation.get("key_tradeoffs", []),
-        "next_steps": explanation.get("next_steps", [])
+    return {
+        "final_decision": {
+            "recommended_option": recommended,
+            "overall_scores": scores,
+            "confidence": explanation.get("confidence", 0.7),
+            "reason": explanation.get("reason", ""),
+            "key_tradeoffs": explanation.get("key_tradeoffs", []),
+            "next_steps": explanation.get("next_steps", [])
+        }
     }
-
-    return {"final_decision": final}

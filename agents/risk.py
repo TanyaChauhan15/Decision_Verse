@@ -1,20 +1,23 @@
+import logging
 from langchain_groq import ChatGroq
 from dotenv import load_dotenv
 from utils.json_parser import parse_json_response
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 llm = ChatGroq(
-    model="llama-3.1-8b-instant",
+    model="openai/gpt-oss-20b",
     temperature=0,
-    max_tokens=350
+    max_tokens=1200,  # was 350 - too low once there are 3+ options
 )
 
 
 def safe_float(value):
     try:
         return float(str(value).replace("₹", "").replace("lakh", "").replace("lakhs", "").strip())
-    except:
+    except (TypeError, ValueError):
         return 0
 
 
@@ -302,6 +305,7 @@ def fallback_risks(decision_type, option_name, option, score):
         "risk_summary": f"{option_name} has {get_risk_level(score)} based on company type, salary, and work mode."
     }
 
+
 def analyze_risk(state):
     options = state.get("options", [])
     decision_type = state.get("decision_type", "")
@@ -316,6 +320,18 @@ def analyze_risk(state):
             "risk_score": score,
             "risk_level": get_risk_level(score)
         }
+
+    option_names = list(base_risk.keys()) or ["Option A", "Option B"]
+
+    schema_lines = ",\n".join(
+        f'''  "{name}": {{
+    "major_risks": ["", "", ""],
+    "mitigation_steps": ["", "", ""],
+    "risk_summary": ""
+  }}'''
+        for name in option_names
+    )
+    schema = "{\n" + schema_lines + "\n}"
 
     prompt = f"""
 You are the Risk Explanation Agent.
@@ -332,24 +348,21 @@ Options:
 Calculated Risk:
 {base_risk}
 
-Return ONLY valid JSON:
+Return ONLY valid, complete JSON matching this exact shape, nothing else.
+Do not add commentary before or after the JSON.
 
-{{
-  "Option A": {{
-    "major_risks": ["", "", ""],
-    "mitigation_steps": ["", "", ""],
-    "risk_summary": ""
-  }},
-  "Option B": {{
-    "major_risks": ["", "", ""],
-    "mitigation_steps": ["", "", ""],
-    "risk_summary": ""
-  }}
-}}
+{schema}
 """
 
-    response = llm.invoke(prompt)
-    explanation = parse_json_response(response.content)
+    try:
+        response = llm.invoke(prompt)
+        explanation = parse_json_response(response.content)
+    except Exception:
+        logger.exception("analyze_risk: LLM call failed")
+        explanation = {}
+
+    if not explanation:
+        logger.warning("analyze_risk: got empty/unparseable explanation for options=%s, falling back for all", option_names)
 
     final_risk = {}
 
@@ -359,6 +372,9 @@ Return ONLY valid JSON:
 
         fallback = fallback_risks(decision_type, name, option, score)
         item = explanation.get(name, {})
+
+        if not item:
+            logger.info("analyze_risk: no LLM explanation for %s, using fallback text", name)
 
         final_risk[name] = {
             "risk_score": score,
