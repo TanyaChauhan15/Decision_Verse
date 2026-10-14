@@ -1,7 +1,10 @@
 import logging
+
 from langchain_groq import ChatGroq
 from dotenv import load_dotenv
+
 from utils.json_parser import parse_json_response
+
 
 load_dotenv()
 
@@ -10,378 +13,306 @@ logger = logging.getLogger(__name__)
 llm = ChatGroq(
     model="openai/gpt-oss-20b",
     temperature=0,
-    max_tokens=1200,  # was 350 - too low once there are 3+ options
+    max_tokens=1800
 )
 
 
-def safe_float(value):
-    try:
-        return float(str(value).replace("₹", "").replace("lakh", "").replace("lakhs", "").strip())
-    except (TypeError, ValueError):
-        return 0
+def normalize_list(value):
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+
+    if isinstance(value, list):
+        return [
+            str(item).strip()
+            for item in value
+            if item is not None and str(item).strip()
+        ]
+
+    return []
 
 
 def get_risk_level(score):
+    """
+    Higher safety score means lower estimated risk.
+
+    This is a heuristic label, not a probability.
+    """
+
     if score <= 3:
         return "High Risk"
-    elif score <= 6:
+
+    if score <= 6:
         return "Medium Risk"
+
     return "Low Risk"
 
 
 def calculate_job_offer_risk(option):
-    score = 6
+    """
+    Calculate a provisional job-security score.
 
-    company_type = str(option.get("company_type", "")).lower()
-    work_mode = str(option.get("work_mode", "")).lower()
-    salary = safe_float(option.get("salary_lpa", 0))
+    Company type alone does not establish actual
+    financial stability or job security.
 
-    if "startup" in company_type:
-        score -= 3
-    elif "mnc" in company_type or "corporate" in company_type:
-        score += 2
-    elif "not specified" in company_type or company_type.strip() == "":
+    Start with a neutral score of 5.
+
+    Only explicitly supplied, verifiable indicators
+    should modify the score.
+    """
+
+    score = 5.0
+
+    evidence = option.get("risk_evidence", {})
+
+    if not isinstance(evidence, dict):
+        evidence = {}
+
+    # Optional verified indicators.
+    # The current extractor does not populate these.
+    # They may be supplied by a future structured-input UI.
+
+    runway = evidence.get("runway_months")
+
+    if isinstance(runway, (int, float)) and not isinstance(runway, bool):
+
+        if runway < 6:
+            score -= 2
+
+        elif runway >= 24:
+            score += 1
+
+    layoffs = evidence.get("recent_layoffs")
+
+    if layoffs is True:
         score -= 1
 
-    if "hybrid" in work_mode or "remote" in work_mode:
-        score += 1
-    elif "office" in work_mode:
-        score -= 0.5
+    elif layoffs is False:
+        # Absence of recent layoffs does not prove safety.
+        pass
 
-    if salary >= 25:
-        score += 1
-    elif 0 < salary < 15:
-        score -= 1
-
-    return round(max(1, min(10, score)), 1)
-
-
-def calculate_ms_vs_job_risk(option):
-    score = 6
-
-    salary = safe_float(option.get("salary_lpa", 0))
-    cost = safe_float(option.get("cost", "0"))
-
-    title = str(option.get("title", "")).lower()
-    notes = str(option.get("notes", "")).lower()
-
-    is_education = (
-        "ms" in title
-        or "master" in title
-        or "university" in notes
-        or cost > 0
+    confirmed_contract = evidence.get(
+        "confirmed_employment_contract"
     )
 
-    if is_education:
-        score -= 2
+    if confirmed_contract is True:
+        score += 0.5
 
-        if cost >= 50:
-            score -= 2
-        elif cost >= 25:
-            score -= 1
-
-        score -= 1  # job outcome uncertainty after degree
-
-    else:
-        if salary > 0:
-            score += 2
-        else:
-            score -= 1
-
-    return round(max(1, min(10, score)), 1)
-
-
-def calculate_rent_vs_buy_risk(option):
-    score = 6
-
-    title = str(option.get("title", "")).lower()
-    cost = safe_float(option.get("cost", "0"))
-    notes = str(option.get("notes", "")).lower()
-
-    is_buy = "buy" in title or "house" in title or "apartment" in title or cost >= 50
-    is_rent = "rent" in title or "rent" in notes
-
-    if is_buy:
-        score -= 2
-
-        if cost >= 100:
-            score -= 2
-        elif cost >= 50:
-            score -= 1
-
-        score -= 1  # liquidity risk
-
-    if is_rent:
-        score += 2
-
-    return round(max(1, min(10, score)), 1)
-
-
-def calculate_career_switch_risk(option):
-    score = 6
-
-    title = str(option.get("title", "")).lower()
-    notes = str(option.get("notes", "")).lower()
-    duration = str(option.get("duration", "")).lower()
-
-    is_switch = (
-        "switch" in title
-        or "learn" in notes
-        or "ai" in notes
-        or "data science" in notes
-        or "one year" in duration
+    return round(
+        max(0, min(10, score)),
+        2
     )
-
-    if is_switch:
-        score -= 2
-        score -= 1  # skill gap
-        score -= 1  # uncertain transition outcome
-    else:
-        score += 1  # staying in current path is usually safer
-
-    return round(max(1, min(10, score)), 1)
-
-
-def calculate_generic_risk(option):
-    score = 5
-
-    salary = safe_float(option.get("salary_lpa", 0))
-    cost = safe_float(option.get("cost", 0))
-
-    if salary > 0:
-        score += 1
-
-    if cost > 30:
-        score -= 2
-
-    if str(option.get("company_type", "")).lower() == "not specified":
-        score -= 1
-
-    return round(max(1, min(10, score)), 1)
 
 
 def calculate_risk_score(option, decision_type):
-    decision_type = str(decision_type).lower()
+    """
+    Current supported scoring scope:
+    job-offer comparisons.
+    """
 
-    if "job offer" in decision_type or "startup vs corporate" in decision_type:
-        return calculate_job_offer_risk(option)
+    if decision_type not in (
+        "Job Offer Comparison",
+        "Startup vs Corporate"
+    ):
+        raise ValueError(
+            f"Risk scoring for '{decision_type}' "
+            "is not yet supported."
+        )
 
-    if "ms abroad" in decision_type or "higher studies" in decision_type:
-        return calculate_ms_vs_job_risk(option)
-
-    if "rent vs buy" in decision_type:
-        return calculate_rent_vs_buy_risk(option)
-
-    if "career switch" in decision_type:
-        return calculate_career_switch_risk(option)
-
-    return calculate_generic_risk(option)
+    return calculate_job_offer_risk(option)
 
 
-def is_education_option(option):
-    title = str(option.get("title", "")).lower()
-    notes = str(option.get("notes", "")).lower()
-    cost = safe_float(option.get("cost", "0"))
+def fallback_risks(option):
+    """
+    Evidence-based fallback explanation.
+    """
 
-    return (
-        "ms" in title
-        or "master" in title
-        or "university" in title
-        or "university" in notes
-        or cost > 0
+    company_type = option.get(
+        "company_type",
+        "Not specified"
     )
-
-
-def fallback_risks(decision_type, option_name, option, score):
-    decision_type = str(decision_type).lower()
-
-    if "ms abroad" in decision_type or "higher studies" in decision_type:
-        if is_education_option(option):
-            return {
-                "major_risks": [
-                    "Education loan or high upfront cost",
-                    "Uncertain post-degree job outcome",
-                    "Visa and relocation uncertainty"
-                ],
-                "mitigation_steps": [
-                    "Estimate total cost and payback period",
-                    "Research placement outcomes and alumni data",
-                    "Check visa rules and backup job options"
-                ],
-                "risk_summary": f"{option_name} has {get_risk_level(score)} based on education cost, income delay, and post-degree uncertainty."
-            }
-
-        return {
-            "major_risks": [
-                "Career growth may be slower than expected",
-                "Limited global exposure compared to MS option",
-                "Role stagnation risk"
-            ],
-            "mitigation_steps": [
-                "Build skills alongside the job",
-                "Negotiate role clarity and growth path",
-                "Re-evaluate higher studies after 1-2 years"
-            ],
-            "risk_summary": f"{option_name} has {get_risk_level(score)} because it provides income stability but may limit global exposure and faster career acceleration."
-        }
-
-    if "rent vs buy" in decision_type:
-        title = str(option.get("title", "")).lower()
-        notes = str(option.get("notes", "")).lower()
-
-        if "rent" in title or "rent" in notes:
-            return {
-                "major_risks": [
-                    "No long-term asset creation",
-                    "Rent may increase over time",
-                    "Less control over property"
-                ],
-                "mitigation_steps": [
-                    "Invest saved EMI difference",
-                    "Choose a stable rental location",
-                    "Review rent agreement carefully"
-                ],
-                "risk_summary": f"{option_name} has {get_risk_level(score)} due to flexibility benefits but limited asset creation."
-            }
-
-        return {
-            "major_risks": [
-                "High EMI commitment",
-                "Reduced liquidity",
-                "Property market uncertainty"
-            ],
-            "mitigation_steps": [
-                "Compare EMI with rent carefully",
-                "Keep emergency fund before buying",
-                "Check resale value and location growth"
-            ],
-            "risk_summary": f"{option_name} has {get_risk_level(score)} based on housing cost, liquidity, and market risk."
-        }
-
-    if "career switch" in decision_type:
-        title = str(option.get("title", "")).lower()
-        notes = str(option.get("notes", "")).lower()
-
-        if "switch" in title or "learn" in notes or "ai" in notes or "data science" in notes:
-            return {
-                "major_risks": [
-                    "Skill gap during transition",
-                    "Temporary salary or opportunity loss",
-                    "Uncertain job conversion"
-                ],
-                "mitigation_steps": [
-                    "Build portfolio projects",
-                    "Create a 6-12 month transition plan",
-                    "Validate demand through internships or freelance work"
-                ],
-                "risk_summary": f"{option_name} has {get_risk_level(score)} based on transition difficulty and market uncertainty."
-            }
-
-        return {
-            "major_risks": [
-                "Career stagnation risk",
-                "Lower future salary growth",
-                "Limited exposure to emerging fields"
-            ],
-            "mitigation_steps": [
-                "Upskill within current domain",
-                "Explore internal role changes",
-                "Track market demand every 6 months"
-            ],
-            "risk_summary": f"{option_name} has {get_risk_level(score)} because it is safer short-term but may reduce long-term upside."
-        }
 
     return {
         "major_risks": [
-            "Company stability uncertainty",
-            "Role-fit risk",
-            "Workload or burnout risk"
+            "Company financial stability has not been verified",
+            "Job security and employment terms are not fully known",
+            "Role expectations and advancement policies are unclear"
         ],
         "mitigation_steps": [
-            "Research company stability",
-            "Clarify role expectations",
-            "Ask about team culture and workload"
+            "Review company financial health and business outlook",
+            "Clarify employment contract and termination conditions",
+            "Discuss role expectations and career progression"
         ],
-        "risk_summary": f"{option_name} has {get_risk_level(score)} based on company type, salary, and work mode."
+        "risk_summary": (
+            f"Company type: {company_type}. "
+            "Insufficient verified information is available "
+            "to distinguish job-security risk reliably."
+        )
     }
 
 
 def analyze_risk(state):
+    """
+    Evaluate risk using deterministic scoring
+    and LLM-generated explanations.
+    """
+
     options = state.get("options", [])
-    decision_type = state.get("decision_type", "")
+
+    decision_type = state.get(
+        "decision_type",
+        "Job Offer Comparison"
+    )
+
+    if not options:
+        return {"risk_analysis": {}}
 
     base_risk = {}
 
     for option in options:
-        name = option.get("name", "Option")
-        score = calculate_risk_score(option, decision_type)
+        name = option["name"]
+
+        score = calculate_risk_score(
+            option,
+            decision_type
+        )
 
         base_risk[name] = {
             "risk_score": score,
             "risk_level": get_risk_level(score)
         }
 
-    option_names = list(base_risk.keys()) or ["Option A", "Option B"]
-
-    schema_lines = ",\n".join(
-        f'''  "{name}": {{
-    "major_risks": ["", "", ""],
-    "mitigation_steps": ["", "", ""],
-    "risk_summary": ""
-  }}'''
-        for name in option_names
-    )
-    schema = "{\n" + schema_lines + "\n}"
-
     prompt = f"""
-You are the Risk Explanation Agent.
+You are the Risk Explanation Agent in DecisionVerse.
 
-Risk scores are already calculated by Python.
-Do NOT change risk_score or risk_level.
+Explain the job-security risks of the supplied options.
 
-Decision Type:
-{decision_type}
-
-Options:
+OPTIONS:
 {options}
 
-Calculated Risk:
+DETERMINISTIC RISK SCORES:
 {base_risk}
 
-Return ONLY valid, complete JSON matching this exact shape, nothing else.
-Do not add commentary before or after the JSON.
+STRICT RULES:
 
-{schema}
+1. Risk scores are calculated by Python.
+   Do not change them.
+
+2. Company type is explicitly provided in each option.
+   Read it carefully.
+
+3. Do not claim that company type is unknown when
+   it is specified.
+
+4. Do not assume every startup is financially unstable.
+
+5. Do not assume every MNC is financially stable.
+
+6. Do not invent funding history, revenue, layoffs,
+   runway, financial performance, or company culture.
+
+7. Salary differences belong to Finance,
+   not job-security risk.
+
+8. Work-mode flexibility belongs to Lifestyle,
+   not job-security risk.
+
+9. Clearly distinguish known facts from
+   information that requires verification.
+
+10. If financial stability is unknown,
+    explicitly state that it is unknown.
+
+11. Do not claim a company has experienced
+    financial difficulties without evidence.
+
+12. Return ONLY valid JSON.
+
+Required JSON structure:
+
+{{
+    "Option A": {{
+        "major_risks": [
+            "Company financial stability is unverified",
+            "Employment terms require clarification"
+        ],
+        "mitigation_steps": [
+            "Review company financial information",
+            "Clarify contract and termination conditions"
+        ],
+        "risk_summary": "Job-security evidence is limited."
+    }},
+    "Option B": {{
+        "major_risks": [
+            "Company financial stability is unverified",
+            "Employment terms require clarification"
+        ],
+        "mitigation_steps": [
+            "Review company financial information",
+            "Clarify contract and termination conditions"
+        ],
+        "risk_summary": "Job-security evidence is limited."
+    }}
+}}
+
+Use the ACTUAL option names.
+Include every option.
+No markdown.
 """
 
     try:
         response = llm.invoke(prompt)
-        explanation = parse_json_response(response.content)
+
+        explanation = parse_json_response(
+            response.content
+        )
+
+        if not isinstance(explanation, dict):
+            explanation = {}
+
     except Exception:
-        logger.exception("analyze_risk: LLM call failed")
+        logger.exception(
+            "Risk explanation generation failed."
+        )
         explanation = {}
 
-    if not explanation:
-        logger.warning("analyze_risk: got empty/unparseable explanation for options=%s, falling back for all", option_names)
-
-    final_risk = {}
+    final_result = {}
 
     for option in options:
-        name = option.get("name", "Option")
-        score = base_risk[name]["risk_score"]
+        name = option["name"]
 
-        fallback = fallback_risks(decision_type, name, option, score)
-        item = explanation.get(name, {})
+        base = base_risk[name]
 
-        if not item:
-            logger.info("analyze_risk: no LLM explanation for %s, using fallback text", name)
+        fallback = fallback_risks(option)
 
-        final_risk[name] = {
-            "risk_score": score,
-            "risk_level": base_risk[name]["risk_level"],
-            "major_risks": item.get("major_risks", []) or fallback["major_risks"],
-            "mitigation_steps": item.get("mitigation_steps", []) or fallback["mitigation_steps"],
-            "risk_summary": item.get("risk_summary", "") or fallback["risk_summary"]
+        data = explanation.get(name, {})
+
+        if not isinstance(data, dict):
+            data = {}
+
+        major_risks = normalize_list(
+            data.get("major_risks")
+        ) or fallback["major_risks"]
+
+        mitigation_steps = normalize_list(
+            data.get("mitigation_steps")
+        ) or fallback["mitigation_steps"]
+
+        summary = data.get("risk_summary")
+
+        if not isinstance(summary, str) or not summary.strip():
+            summary = fallback["risk_summary"]
+
+        final_result[name] = {
+            "risk_score": base["risk_score"],
+            "risk_level": base["risk_level"],
+            "major_risks": major_risks,
+            "mitigation_steps": mitigation_steps,
+            "risk_summary": summary.strip(),
+            "risk_evidence_status": (
+                "Limited verified evidence"
+            )
         }
 
-    return {"risk_analysis": final_risk}
+    return {
+        "risk_analysis": final_result
+    }

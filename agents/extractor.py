@@ -1,200 +1,71 @@
 import re
-import logging
 
-logger = logging.getLogger(__name__)
-
+# Currently supports structured job-offer comparisons only.
+PRIORITY_PATTERNS = {
+    "career_growth": r"\b(?:career(?:\s+growth)?|advancement|promotion|growth opportunities)\b",
+    "savings": r"\b(?:saving(?:s)?|financial stability|financial security|compensation|salary|income)\b",
+    "learning": r"\b(?:learn(?:ing)?|upskill(?:ing)?|skill development)\b",
+    "work_life_balance": r"\b(?:work[\s-]*life balance|flexibility|personal time)\b",
+}
 
 def extract_priorities(query):
     text = query.lower()
-
-    priorities = {
-        "career_growth": "Not specified",
-        "savings": "Not specified",
-        "learning": "Not specified",
-        "work_life_balance": "Not specified",
-        "risk_tolerance": "Not specified",
-    }
-
-    # Simple negation guard: if a "not/no/isn't/don't care" style word
-    # appears shortly before the keyword, don't mark it High.
-    def mentioned_positively(keyword_pattern):
-        for m in re.finditer(keyword_pattern, text):
-            window_start = max(0, m.start() - 25)
-            window = text[window_start:m.start()]
-            if re.search(r"\b(not|no|isn't|isnt|don't|dont|never|without)\b", window):
+    # Inspect priority clause only: salaries in offer descriptions are not priorities.
+    match = re.search(r"\b(?:my priorities|i prioritize|most important to me|i value)\b\s*(?:are|is|:)?\s*(.*)", text, re.S)
+    focus = match.group(1) if match else ""
+    result = {k: "Not specified" for k in (*PRIORITY_PATTERNS, "risk_tolerance")}
+    for key, pattern in PRIORITY_PATTERNS.items():
+        for m in re.finditer(pattern, focus):
+            context = focus[max(0, m.start()-35):m.start()]
+            if re.search(r"\b(?:not|no|don't|dont|isn't|isnt|avoid|less)\s+(?:particularly\s+)?(?:care\s+about\s+)?$", context):
                 continue
-            return True
-        return False
-
-    if mentioned_positively(r"career(?:\s+growth)?"):
-        priorities["career_growth"] = "High"
-
-    if mentioned_positively(r"saving"):
-        priorities["savings"] = "High"
-
-    if mentioned_positively(r"learn(?:ing)?"):
-        priorities["learning"] = "High"
-
-    if mentioned_positively(r"work[\s-]?life\s+balance"):
-        priorities["work_life_balance"] = "High"
-
-    if "low risk" in text:
-        priorities["risk_tolerance"] = "Low"
-    elif "medium risk" in text or "moderate risk" in text:
-        priorities["risk_tolerance"] = "Medium"
-    elif "high risk" in text:
-        priorities["risk_tolerance"] = "High"
-
-    return priorities
-
-
-def parse_job_option(text, option_name):
-    text = text.strip()
-    warnings = []
-
-    # -----------------------------
-    # Company (grab everything up to a known stop-word/punctuation,
-    # not just a single token)
-    # -----------------------------
-    company = "Not specified"
-    match = re.search(
-        r"from\s+(.+?)(?=\s+for\b|\s+with\b|\s+offering\b|\s*,|\s*\.|$)",
-        text,
-        re.IGNORECASE,
-    )
-    if match:
-        company = match.group(1).strip()
-    else:
-        warnings.append("company not found")
-
-    # -----------------------------
-    # Role (the word "role" is now optional)
-    # -----------------------------
-    role = "Not specified"
-    match = re.search(r"for\s+(.+?)\s+(?:role|position|job)\b", text, re.IGNORECASE)
-    if not match:
-        match = re.search(
-            r"for\s+(.+?)(?=\s+with\b|\s+at\b|\s*,|\s*\.|$)",
-            text,
-            re.IGNORECASE,
-        )
-    if match:
-        role = match.group(1).strip()
-    else:
-        warnings.append("role not found")
-
-    # -----------------------------
-    # Salary (handles LPA and "lakh(s) per annum")
-    # -----------------------------
-    salary_lpa = 0
-    match = re.search(
-        r"(\d+(?:\.\d+)?)\s*(?:LPA|lakhs?\s*(?:per\s+annum)?)",
-        text,
-        re.IGNORECASE,
-    )
-    if match:
-        salary_lpa = float(match.group(1))
-    else:
-        warnings.append("salary not found")
-
-    # -----------------------------
-    # Location (several common phrasings, not just one exact template)
-    # -----------------------------
-    location = "Not specified"
-    location_patterns = [
-        r"(?:based in|located in|location[:\s]+)\s*([A-Za-z\s]+?)(?=\s+with\b|\s*,|\s*\.|$)",
-        r"salary\s+in\s+([A-Za-z\s]+?)(?=\s+with\b|\s*,|\s*\.|$)",
-        r"\bin\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)\b",  # capitalised place name fallback
-    ]
-    for pattern in location_patterns:
-        match = re.search(pattern, text, re.IGNORECASE if pattern != location_patterns[-1] else 0)
-        if match:
-            location = match.group(1).strip()
+            result[key] = "High"
             break
-    if location == "Not specified":
-        warnings.append("location not found")
+    if re.search(r"\b(?:low risk|risk averse|risk-averse|avoid risk|job security|stability)\b", focus):
+        result["risk_tolerance"] = "Low"
+    elif re.search(r"\b(?:moderate|medium)\s+risk\b", focus):
+        result["risk_tolerance"] = "Medium"
+    elif re.search(r"\b(?:high risk|risk tolerant|comfortable with risk)\b", focus):
+        result["risk_tolerance"] = "High"
+    return result
 
-    # -----------------------------
-    # Work mode
-    # -----------------------------
-    text_lower = text.lower()
-    if "hybrid" in text_lower:
-        work_mode = "Hybrid"
-    elif "remote" in text_lower:
-        work_mode = "Remote"
-    elif "office" in text_lower:
-        work_mode = "Office"
-    else:
-        work_mode = "Not specified"
-
-    # -----------------------------
-    # Company type
-    # -----------------------------
-    if "startup" in text_lower:
-        company_type = "Startup"
-    elif "mnc" in text_lower:
-        company_type = "MNC"
-    elif "corporate" in text_lower:
-        company_type = "Corporate"
-    else:
-        company_type = "Not specified"
-
-    if warnings:
-        logger.warning("parse_job_option(%s): %s | raw_text=%r", option_name, "; ".join(warnings), text)
-
-    return {
-        "name": option_name,
-        "company": company,
-        "role": role,
-        "salary_lpa": salary_lpa,
-        "location": location,
-        "work_mode": work_mode,
-        "company_type": company_type,
-    }
-
+def parse_job_option(text, name):
+    text = text.strip(' \n\t:,-.')
+    company = re.search(r"\bfrom\s+(.+?)(?=\s+for\b|\s+with\b|\s+offering\b|[,.;]|$)", text, re.I)
+    role = re.search(r"\bfor\s+(?:an?\s+)?(.+?)(?=\s+(?:role|position|job)\b|\s+with\b|\s+at\b|[,.;]|$)", text, re.I)
+    salary = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:lpa|lakhs?\s*(?:per\s+annum)?)\b", text, re.I)
+    city = re.search(r"\b(?:based\s+in|located\s+in|salary\s+in|location\s*[:=]\s*|\bin\s+)(Bangalore|Bengaluru|Mumbai|Hyderabad|Delhi|Pune|Chennai|Gurgaon|Gurugram|Noida|Kolkata)\b", text, re.I)
+    mode = re.search(r"\b(hybrid|remote|in[\s-]*office|onsite|on[\s-]*site|office)\b", text, re.I)
+    work_mode = "Not specified"
+    if mode:
+        work_mode = "Hybrid" if mode.group(1).lower() == "hybrid" else "Remote" if mode.group(1).lower() == "remote" else "Office"
+    company_type = "Not specified"
+    if re.search(r"\bstartup\b", text, re.I): company_type = "Startup"
+    elif re.search(r"\bmnc\b", text, re.I): company_type = "MNC"
+    elif re.search(r"\bcorporate\b", text, re.I): company_type = "Corporate"
+    return {"name":name, "company":company.group(1).strip() if company else "Not specified",
+            "role":role.group(1).strip() if role else "Not specified",
+            "salary_lpa":float(salary.group(1)) if salary else None,
+            "location":city.group(1).title() if city else "Not specified",
+            "work_mode":work_mode,"company_type":company_type}
 
 def extract_decision_info(state):
+    decision_type = state.get("decision_type", "")
+    if decision_type not in ("Job Offer Comparison", "Startup vs Corporate"):
+        raise ValueError(f"Decision type '{decision_type}' is not yet supported end-to-end. Try comparing two job offers.")
     query = state.get("user_query", "")
-
-    # ========================================================
-    # JOB OFFER EXTRACTION - supports any number of options
-    # (Offer A, Offer B, Offer C, Option 1, Option 2, ...)
-    # instead of being hardcoded to exactly A and B.
-    # ========================================================
-    # \b after (?:Offer|Option) is required - without it, "Offer" matches as a
-    # prefix of the plain English word "offers" (e.g. "I have two job offers."),
-    # and the trailing "s" gets captured as a bogus option label ("Option S").
-    option_header_pattern = re.compile(
-        r"\b(?:Offer|Option)\b\s*([A-Za-z0-9]+)\b",
-        re.IGNORECASE,
-    )
-
-    headers = list(option_header_pattern.finditer(query))
-
+    headers = list(re.finditer(r"\b(?:Offer|Option)\s+([A-Za-z0-9]+)\s*(?:[:\-]|\bis\b)?", query, re.I))
     options = []
-
-    if not headers:
-        logger.warning("extract_decision_info: no 'Offer X' / 'Option X' headers found in query=%r", query)
-
-    for i, header_match in enumerate(headers):
-        label = header_match.group(1).upper()
-        segment_start = header_match.end()
-        segment_end = headers[i + 1].start() if i + 1 < len(headers) else len(query)
-        segment_text = query[segment_start:segment_end]
-
-        option = parse_job_option(segment_text, f"Option {label}")
-        options.append(option)
-
-    priorities = extract_priorities(query)
-
-    # ========================================================
-    # RETURN
-    # ========================================================
-    return {
-        "options": options,
-        "priorities": priorities,
-        "extracted_info": {
-            "method": "Deterministic extraction",
-            "options_found": len(options),
-        },
-    }
+    for i, header in enumerate(headers):
+        segment = query[header.end():headers[i+1].start() if i+1 < len(headers) else len(query)]
+        segment = re.split(r"\b(?:my priorities|i prioritize|most important to me|i value)\b", segment, maxsplit=1, flags=re.I)[0]
+        options.append(parse_job_option(segment, f"Option {header.group(1).upper()}"))
+    if len(options) < 2:
+        raise ValueError("Please describe at least two offers using 'Offer A ... Offer B ...'.")
+    if len({x['name'] for x in options}) != len(options):
+        raise ValueError("Offer labels must be unique.")
+    missing = [o['name'] for o in options if o['salary_lpa'] is None or o['location'] == 'Not specified']
+    if missing:
+        raise ValueError(f"Salary and recognized city are required for {', '.join(missing)}. Include e.g. '22 LPA salary in Bangalore'.")
+    return {"options": options, "priorities":extract_priorities(query),
+            "extracted_info":{"method":"Deterministic job-offer extraction", "options_found":len(options)}}

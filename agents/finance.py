@@ -1,16 +1,14 @@
+import math
 import re
 
 
-# ============================================================
-# PROTOTYPE ASSUMPTIONS
-# ============================================================
+# =========================================================
+# DEFAULT FINANCIAL ASSUMPTIONS
+# =========================================================
 
-# These are simplified assumptions for the demo.
-# They are NOT actual income-tax calculations.
-
-TAKE_HOME_RATE = 0.75
-SALARY_GROWTH_RATE = 0.08
-LIVING_COST_INFLATION = 0.06
+DEFAULT_TAKE_HOME_RATE = 0.75
+DEFAULT_SALARY_GROWTH = 0.08
+DEFAULT_COST_INFLATION = 0.06
 
 CITY_LIVING_COST = {
     "bangalore": 55000,
@@ -20,58 +18,59 @@ CITY_LIVING_COST = {
     "delhi": 50000,
     "pune": 45000,
     "chennai": 42000,
+    "gurgaon": 50000,
+    "gurugram": 50000,
+    "noida": 45000,
+    "kolkata": 40000
 }
 
 
-# ============================================================
+# =========================================================
 # HELPERS
-# ============================================================
+# =========================================================
 
-def safe_float(value):
-    """
-    Convert values such as:
-    25
-    "25"
-    "₹25 lakh"
-    "25 LPA"
-    "25.5"
-    into float.
-    """
-
-    if value is None:
-        return 0.0
+def safe_float(value, default=None):
+    if value is None or isinstance(value, bool):
+        return default
 
     try:
-        text = str(value).lower()
+        if isinstance(value, (int, float)):
+            number = float(value)
 
-        text = (
-            text.replace("₹", "")
-            .replace(",", "")
-            .replace("lpa", "")
-            .replace("lakh", "")
-            .replace("lakhs", "")
-            .strip()
-        )
+        else:
+            text = str(value).lower()
 
-        match = re.search(r"\d+(?:\.\d+)?", text)
+            text = (
+                text.replace("₹", "")
+                .replace(",", "")
+                .replace("lpa", "")
+                .replace("lakhs", "")
+                .replace("lakh", "")
+                .strip()
+            )
 
-        if match:
-            return float(match.group())
+            match = re.search(
+                r"-?\d+(?:\.\d+)?",
+                text
+            )
 
-        return 0.0
+            if not match:
+                return default
+
+            number = float(match.group())
+
+        return number if math.isfinite(number) else default
 
     except (TypeError, ValueError):
-        return 0.0
+        return default
+
+
+def clamp(value, minimum=0, maximum=10):
+    return max(minimum, min(maximum, value))
 
 
 def get_city_cost(location):
-    """
-    Return estimated monthly living cost.
-
-    These values are prototype assumptions.
-    """
-
-    location = str(location or "").lower().strip()
+    location = str(location or "").lower()
 
     for city, cost in CITY_LIVING_COST.items():
         if city in location:
@@ -80,82 +79,174 @@ def get_city_cost(location):
     return 40000
 
 
-def clamp(value, minimum=0, maximum=10):
-    return max(minimum, min(maximum, value))
+def get_settings(state):
+    """
+    Read user-configurable financial assumptions.
+    """
+
+    settings = state.get("finance_settings", {})
+
+    if not isinstance(settings, dict):
+        settings = {}
+
+    take_home_rate = safe_float(
+        settings.get("take_home_rate"),
+        DEFAULT_TAKE_HOME_RATE
+    )
+
+    salary_growth = safe_float(
+        settings.get("salary_growth"),
+        DEFAULT_SALARY_GROWTH
+    )
+
+    cost_inflation = safe_float(
+        settings.get("cost_inflation"),
+        DEFAULT_COST_INFLATION
+    )
+
+    if not 0 < take_home_rate <= 1:
+        raise ValueError(
+            "Take-home rate must be between 0 and 1."
+        )
+
+    if not 0 <= salary_growth <= 0.5:
+        raise ValueError(
+            "Salary growth must be between 0% and 50%."
+        )
+
+    if not 0 <= cost_inflation <= 0.5:
+        raise ValueError(
+            "Cost inflation must be between 0% and 50%."
+        )
+
+    living_cost_overrides = settings.get(
+        "living_cost_overrides",
+        {}
+    )
+
+    if not isinstance(living_cost_overrides, dict):
+        living_cost_overrides = {}
+
+    return {
+        "take_home_rate": take_home_rate,
+        "salary_growth": salary_growth,
+        "cost_inflation": cost_inflation,
+        "living_cost_overrides": living_cost_overrides
+    }
 
 
-# ============================================================
-# JOB FINANCE
-# ============================================================
+# =========================================================
+# FINANCIAL CALCULATION
+# =========================================================
 
-def calculate_job_finance(option):
+def calculate_job_finance(option, settings=None):
+    """
+    Calculate salary, savings, and five-year projections.
+    """
 
-    salary_lpa = safe_float(option.get("salary_lpa", 0))
-    location = option.get("location", "")
-
-    living_cost = get_city_cost(location)
-
-    # --------------------------------------------------------
-    # Missing salary
-    # --------------------------------------------------------
-
-    if salary_lpa <= 0:
-        return {
-            "monthly_gross": 0,
-            "monthly_in_hand": 0,
-            "living_cost": living_cost,
-            "monthly_savings": 0,
-            "annual_savings": 0,
-            "savings_rate": 0,
-            "five_year_savings": 0,
-            "five_year_projection": [],
-            "finance_score": 0,
+    if settings is None:
+        settings = {
+            "take_home_rate": DEFAULT_TAKE_HOME_RATE,
+            "salary_growth": DEFAULT_SALARY_GROWTH,
+            "cost_inflation": DEFAULT_COST_INFLATION,
+            "living_cost_overrides": {}
         }
 
-    # --------------------------------------------------------
-    # Year 1
-    # --------------------------------------------------------
+    salary_lpa = safe_float(
+        option.get("salary_lpa")
+    )
+
+    if salary_lpa is None or salary_lpa <= 0:
+        raise ValueError(
+            f"Valid salary is required for "
+            f"{option.get('name', 'this option')}."
+        )
+
+    name = option.get("name", "Option")
+
+    location = option.get(
+        "location",
+        "Not specified"
+    )
+
+    overrides = settings.get(
+        "living_cost_overrides",
+        {}
+    )
+
+    living_cost = safe_float(
+        overrides.get(name)
+    )
+
+    if living_cost is None:
+        living_cost = safe_float(
+            option.get("monthly_living_cost")
+        )
+
+    if living_cost is None:
+        living_cost = get_city_cost(location)
+
+    if living_cost < 0:
+        raise ValueError(
+            f"Living cost cannot be negative for {name}."
+        )
+
+    take_home_rate = settings["take_home_rate"]
+    salary_growth = settings["salary_growth"]
+    cost_inflation = settings["cost_inflation"]
 
     annual_gross = salary_lpa * 100000
 
-    # Simplified take-home estimate
-    annual_in_hand = annual_gross * TAKE_HOME_RATE
+    annual_in_hand = (
+        annual_gross * take_home_rate
+    )
 
     monthly_gross = annual_gross / 12
+
     monthly_in_hand = annual_in_hand / 12
 
-    monthly_savings = monthly_in_hand - living_cost
+    monthly_savings = (
+        monthly_in_hand - living_cost
+    )
+
     annual_savings = monthly_savings * 12
 
-    if monthly_in_hand > 0:
-        savings_rate = monthly_savings / monthly_in_hand
-    else:
-        savings_rate = 0
+    savings_rate = (
+        monthly_savings / monthly_in_hand
+        if monthly_in_hand > 0
+        else 0
+    )
 
-    # Prevent negative savings rate from creating weird scores
-    savings_rate_for_score = max(0, savings_rate)
+    # -----------------------------------------------------
+    # FIVE-YEAR PROJECTION
+    # -----------------------------------------------------
 
-    # --------------------------------------------------------
-    # Five-year projection
-    # --------------------------------------------------------
-
-    total_savings = 0
     projection = []
 
+    cumulative_savings = 0.0
+
     current_salary = salary_lpa
-    current_monthly_cost = living_cost
+    current_living_cost = living_cost
 
     for year in range(1, 6):
 
-        yearly_gross = current_salary * 100000
+        yearly_gross = (
+            current_salary * 100000
+        )
 
-        yearly_in_hand = yearly_gross * TAKE_HOME_RATE
+        yearly_in_hand = (
+            yearly_gross * take_home_rate
+        )
 
-        yearly_living_cost = current_monthly_cost * 12
+        yearly_living_cost = (
+            current_living_cost * 12
+        )
 
-        yearly_savings = yearly_in_hand - yearly_living_cost
+        yearly_savings = (
+            yearly_in_hand - yearly_living_cost
+        )
 
-        total_savings += yearly_savings
+        cumulative_savings += yearly_savings
 
         projection.append({
             "year": year,
@@ -163,25 +254,18 @@ def calculate_job_finance(option):
             "annual_in_hand": round(yearly_in_hand),
             "annual_living_cost": round(yearly_living_cost),
             "annual_savings": round(yearly_savings),
-            "cumulative_savings": round(total_savings),
+            "cumulative_savings": round(
+                cumulative_savings
+            )
         })
 
-        current_salary *= (1 + SALARY_GROWTH_RATE)
-        current_monthly_cost *= (1 + LIVING_COST_INFLATION)
+        current_salary *= (
+            1 + salary_growth
+        )
 
-    # --------------------------------------------------------
-    # Finance score
-    # --------------------------------------------------------
-    #
-    # Score primarily reflects savings rate.
-    # 80% savings rate = 10/10.
-    #
-    # This is a prototype score, not a financial recommendation.
-    # --------------------------------------------------------
-
-    finance_score = clamp(
-        savings_rate_for_score / 0.80 * 10
-    )
+        current_living_cost *= (
+            1 + cost_inflation
+        )
 
     return {
         "monthly_gross": round(monthly_gross),
@@ -189,135 +273,174 @@ def calculate_job_finance(option):
         "living_cost": round(living_cost),
         "monthly_savings": round(monthly_savings),
         "annual_savings": round(annual_savings),
-        "savings_rate": round(savings_rate * 100, 1),
-        "five_year_savings": round(total_savings),
+        "savings_rate": round(
+            savings_rate * 100,
+            1
+        ),
+        "five_year_savings": round(
+            cumulative_savings
+        ),
         "five_year_projection": projection,
-        "finance_score": round(finance_score, 1),
+        "finance_score": None
     }
 
 
-# ============================================================
-# MS ABROAD VS JOB
-# ============================================================
+# =========================================================
+# COMPARATIVE FINANCE SCORING
+# =========================================================
 
-def calculate_ms_vs_job_finance(option):
+def update_comparative_finance_scores(result, options):
+    """
+    Combine:
+    50% savings-rate score
+    50% relative absolute-savings score
 
-    salary = safe_float(option.get("salary_lpa", 0))
-    cost = safe_float(option.get("cost", 0))
-    duration = option.get("duration", "")
+    These are comparative prototype scores.
+    """
 
-    # --------------------------------------------------------
-    # Education option
-    # --------------------------------------------------------
+    names = [
+        option["name"]
+        for option in options
+        if option.get("name") in result
+    ]
 
-    if cost > 0 and salary <= 0:
+    if not names:
+        return result
 
-        total_cost = cost * 100000
-
-        # Prototype assumption only.
-        estimated_post_ms_salary = 35
-
-        estimated_annual_in_hand = (
-            estimated_post_ms_salary
-            * 100000
-            * TAKE_HOME_RATE
+    max_savings = max(
+        max(
+            0,
+            result[name]["monthly_savings"]
         )
-
-        payback_years = (
-            total_cost / estimated_annual_in_hand
-            if estimated_annual_in_hand > 0
-            else 0
-        )
-
-        # Simple prototype score
-        score = 6.0
-
-        if cost >= 50:
-            score -= 2
-
-        elif cost >= 25:
-            score -= 1
-
-        if payback_years <= 3:
-            score += 1
-
-        elif payback_years > 5:
-            score -= 1
-
-        score = clamp(score, 1, 10)
-
-        return {
-            "education_cost": round(total_cost),
-            "duration": duration,
-
-            "estimated_post_ms_salary_lpa": estimated_post_ms_salary,
-
-            "estimated_annual_in_hand_after_ms": round(
-                estimated_annual_in_hand
-            ),
-
-            "payback_years": round(payback_years, 1),
-
-            "monthly_gross": 0,
-            "monthly_in_hand": 0,
-            "living_cost": 0,
-            "monthly_savings": 0,
-            "annual_savings": 0,
-            "savings_rate": 0,
-
-            "five_year_savings": -round(total_cost),
-
-            "five_year_projection": [],
-
-            "finance_score": round(score, 1),
-        }
-
-    # --------------------------------------------------------
-    # Normal job option
-    # --------------------------------------------------------
-
-    return calculate_job_finance(option)
-
-
-# ============================================================
-# MAIN FINANCE AGENT
-# ============================================================
-
-def analyze_finance(state):
-
-    decision_type = str(
-        state.get("decision_type", "")
+        for name in names
     )
 
+    for name in names:
+
+        data = result[name]
+
+        savings_rate = max(
+            0,
+            data["savings_rate"] / 100
+        )
+
+        rate_score = clamp(
+            savings_rate / 0.80 * 10
+        )
+
+        if max_savings > 0:
+
+            absolute_score = clamp(
+                max(
+                    0,
+                    data["monthly_savings"]
+                ) / max_savings * 10
+            )
+
+        else:
+            absolute_score = 0
+
+        finance_score = (
+            0.5 * rate_score
+            + 0.5 * absolute_score
+        )
+
+        data["finance_score"] = round(
+            finance_score,
+            2
+        )
+
+        data["finance_score_components"] = {
+            "savings_rate_score": round(
+                rate_score,
+                2
+            ),
+            "absolute_savings_score": round(
+                absolute_score,
+                2
+            )
+        }
+
+    return result
+
+
+# =========================================================
+# MAIN FINANCE AGENT
+# =========================================================
+
+def analyze_finance(state):
+    """
+    Analyze job-offer finances using configurable
+    assumptions and comparative scoring.
+    """
+
+    decision_type = state.get(
+        "decision_type",
+        ""
+    )
+
+    if decision_type not in (
+        "Job Offer Comparison",
+        "Startup vs Corporate"
+    ):
+        raise ValueError(
+            f"Financial analysis for '{decision_type}' "
+            "is not yet supported."
+        )
+
     options = state.get("options", [])
+
+    if len(options) < 2:
+        raise ValueError(
+            "At least two job offers are required."
+        )
+
+    settings = get_settings(state)
 
     result = {}
 
     for option in options:
 
-        name = option.get("name", "Option")
+        name = option["name"]
 
-        if decision_type == "MS Abroad vs Job":
+        result[name] = calculate_job_finance(
+            option,
+            settings
+        )
 
-            result[name] = calculate_ms_vs_job_finance(
-                option
-            )
+    result = update_comparative_finance_scores(
+        result,
+        options
+    )
 
-        else:
-
-            result[name] = calculate_job_finance(
-                option
-            )
-
-    # Keep assumptions visible for the UI.
     result["_assumptions"] = {
-        "take_home_rate": "75% of gross salary",
-        "salary_growth": "8% annually",
-        "living_cost_inflation": "6% annually",
-        "note": (
-            "Finance figures are simplified prototype estimates, "
-            "not actual tax or investment calculations."
+        "take_home_rate": (
+            f"{settings['take_home_rate'] * 100:.1f}% "
+            "of gross salary"
         ),
+        "salary_growth": (
+            f"{settings['salary_growth'] * 100:.1f}% "
+            "annually"
+        ),
+        "living_cost_inflation": (
+            f"{settings['cost_inflation'] * 100:.1f}% "
+            "annually"
+        ),
+        "monthly_living_costs": {
+            name: result[name]["living_cost"]
+            for name in [
+                option["name"]
+                for option in options
+            ]
+        },
+        "finance_scoring": (
+            "50% savings-rate score + "
+            "50% relative monthly-savings score"
+        ),
+        "note": (
+            "These are simplified estimates, not actual "
+            "tax calculations or investment projections."
+        )
     }
 
     return {

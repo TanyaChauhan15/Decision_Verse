@@ -1,68 +1,89 @@
-def get_score(data, option, key, default=0):
-    try:
-        return float(data.get(option, {}).get(key, default))
-    except (TypeError, ValueError):
-        return default
+import math
 
+
+# ============================================================
+# PRIORITY WEIGHTS
+# ============================================================
 
 def priority_value(value):
-    value = str(value).lower()
+    """
+    Convert priority labels into numerical importance.
+    """
+
+    value = str(value).lower().strip()
 
     if "high" in value:
-        return 3
+        return 3.0
 
     if "medium" in value or "moderate" in value:
-        return 2
+        return 2.0
 
-    if "low" in value:
-        return 1
-
-    return 1
+    return 1.0
 
 
 def compute_dynamic_weights(priorities):
+    """
+    Convert user priorities into normalized category weights.
 
-    career_weight = (
+    Career growth and learning are averaged to avoid
+    counting career importance twice.
+    """
+
+    if not isinstance(priorities, dict):
+        priorities = {}
+
+    career = (
         priority_value(priorities.get("career_growth"))
         + priority_value(priorities.get("learning"))
-    )
+    ) / 2
 
-    finance_weight = priority_value(
+    finance = priority_value(
         priorities.get("savings")
     )
 
-    lifestyle_weight = priority_value(
+    lifestyle = priority_value(
         priorities.get("work_life_balance")
     )
 
-    risk_value = str(
+    risk_tolerance = str(
         priorities.get("risk_tolerance", "")
     ).lower()
 
-    # Low risk tolerance = risk receives greater importance
-    if "low" in risk_value:
-        risk_weight = 3
-    elif "medium" in risk_value or "moderate" in risk_value:
-        risk_weight = 2
-    else:
-        risk_weight = 1
+    if "low" in risk_tolerance:
+        risk = 3.0
 
-    weights = {
-        "career": career_weight,
-        "finance": finance_weight,
-        "lifestyle": lifestyle_weight,
-        "risk": risk_weight
+    elif (
+        "medium" in risk_tolerance
+        or "moderate" in risk_tolerance
+    ):
+        risk = 2.0
+
+    else:
+        risk = 1.0
+
+    raw_weights = {
+        "career": career,
+        "finance": finance,
+        "lifestyle": lifestyle,
+        "risk": risk
     }
 
-    total = sum(weights.values())
+    total = sum(raw_weights.values())
 
     return {
-        key: round(value / total, 2)
-        for key, value in weights.items()
+        category: value / total
+        for category, value in raw_weights.items()
     }
 
 
+# ============================================================
+# COMBINE AGENT ANALYSES
+# ============================================================
+
 def aggregate_analysis(state):
+    """
+    Combine analyses before the risk agent runs.
+    """
 
     return {
         "combined_analysis": {
@@ -73,91 +94,185 @@ def aggregate_analysis(state):
     }
 
 
+# ============================================================
+# SCORE VALIDATION
+# ============================================================
+
+def get_score(data, option_name, score_key):
+    """
+    Retrieve and validate an agent score.
+    """
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Invalid analysis data for {option_name}."
+        )
+
+    option_data = data.get(option_name, {})
+
+    if not isinstance(option_data, dict):
+        raise ValueError(
+            f"Missing analysis for {option_name}."
+        )
+
+    raw_score = option_data.get(score_key)
+
+    if raw_score is None or isinstance(raw_score, bool):
+        raise ValueError(
+            f"Missing {score_key} for {option_name}."
+        )
+
+    try:
+        score = float(raw_score)
+
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"Invalid {score_key} for {option_name}."
+        )
+
+    if not math.isfinite(score) or not 0 <= score <= 10:
+        raise ValueError(
+            f"{score_key} must be between 0 and 10."
+        )
+
+    return score
+
+
+# ============================================================
+# FINAL SCORE CALCULATION
+# ============================================================
+
 def compute_overall_scores(state):
+    """
+    LangGraph node.
 
-    career = state.get("career_analysis", {})
-    finance = state.get("finance_analysis", {})
-    lifestyle = state.get("lifestyle_analysis", {})
-    risk = state.get("risk_analysis", {})
-    priorities = state.get("priorities", {})
+    Accepts:
+        state
 
-    weights = compute_dynamic_weights(priorities)
+    Returns:
+        Dictionary containing scores, weights,
+        breakdown, recommendation and margin.
+
+    IMPORTANT:
+        Do not unpack this function into two variables.
+    """
+
+    options = state.get("options", [])
+
+    if not isinstance(options, list) or len(options) < 2:
+        raise ValueError(
+            "At least two options are required."
+        )
+
+    weights = compute_dynamic_weights(
+        state.get("priorities", {})
+    )
+
+    categories = {
+        "Career": (
+            "career_analysis",
+            "career_score",
+            "career"
+        ),
+        "Finance": (
+            "finance_analysis",
+            "finance_score",
+            "finance"
+        ),
+        "Lifestyle": (
+            "lifestyle_analysis",
+            "lifestyle_score",
+            "lifestyle"
+        ),
+        "Risk": (
+            "risk_analysis",
+            "risk_score",
+            "risk"
+        )
+    }
 
     scores = {}
     breakdown = {}
 
-    # Was hardcoded to ["Option A", "Option B"] - now scales to any number
-    # of options actually present in state, falling back to A/B only if
-    # state["options"] is somehow missing.
-    option_names = [
-        opt.get("name") for opt in state.get("options", []) if opt.get("name")
-    ] or ["Option A", "Option B"]
+    for option in options:
 
-    for option in option_names:
+        name = option.get("name")
 
-        career_score = get_score(
-            career, option, "career_score"
-        )
+        if not name:
+            raise ValueError(
+                "An option is missing its name."
+            )
 
-        finance_score = get_score(
-            finance, option, "finance_score"
-        )
+        total_score = 0.0
+        option_breakdown = {}
 
-        lifestyle_score = get_score(
-            lifestyle, option, "lifestyle_score"
-        )
+        for category, (
+            analysis_key,
+            score_key,
+            weight_key
+        ) in categories.items():
 
-        risk_score = get_score(
-            risk, option, "risk_score"
-        )
+            analysis = state.get(
+                analysis_key,
+                {}
+            )
 
-        career_contribution = career_score * weights["career"]
-        finance_contribution = finance_score * weights["finance"]
-        lifestyle_contribution = lifestyle_score * weights["lifestyle"]
-        risk_contribution = risk_score * weights["risk"]
+            raw_score = get_score(
+                analysis,
+                name,
+                score_key
+            )
 
-        overall = (
-            career_contribution
-            + finance_contribution
-            + lifestyle_contribution
-            + risk_contribution
-        )
+            weight = weights[weight_key]
 
-        scores[option] = round(overall, 2)
+            contribution = raw_score * weight
 
-        breakdown[option] = {
-            "Career": {
-                "raw_score": career_score,
-                "weight": weights["career"],
-                "contribution": round(career_contribution, 2)
-            },
-            "Finance": {
-                "raw_score": finance_score,
-                "weight": weights["finance"],
-                "contribution": round(finance_contribution, 2)
-            },
-            "Lifestyle": {
-                "raw_score": lifestyle_score,
-                "weight": weights["lifestyle"],
-                "contribution": round(lifestyle_contribution, 2)
-            },
-            "Risk": {
-                "raw_score": risk_score,
-                "weight": weights["risk"],
-                "contribution": round(risk_contribution, 2)
-            },
-            "Total": round(overall, 2)
-        }
+            # No intermediate rounding
+            total_score += contribution
 
-    # Only recommend if valid scores exist
-    if all(score == 0 for score in scores.values()):
-        recommended = ""
-    else:
-        recommended = max(scores, key=scores.get)
+            option_breakdown[category] = {
+                "raw_score": raw_score,
+                "weight": weight,
+                "contribution": contribution
+            }
+
+        scores[name] = total_score
+
+        option_breakdown["Total"] = total_score
+
+        breakdown[name] = option_breakdown
+
+    ranking = sorted(
+        scores,
+        key=lambda name: scores[name],
+        reverse=True
+    )
+
+    best_option = ranking[0]
+    second_option = ranking[1]
+
+    margin = (
+        scores[best_option]
+        - scores[second_option]
+    )
 
     return {
         "overall_scores": scores,
-        "recommended_option": recommended,
+        "recommended_option": best_option,
         "scoring_weights": weights,
-        "score_breakdown": breakdown
+        "score_breakdown": breakdown,
+        "decision_margin": margin
     }
+
+
+# ============================================================
+# OPTIONAL COMPATIBILITY ALIAS
+# ============================================================
+
+def score_aggregator(state):
+    """
+    Compatibility wrapper for workflows that import
+    score_aggregator instead of compute_overall_scores.
+    """
+
+    return compute_overall_scores(state)
