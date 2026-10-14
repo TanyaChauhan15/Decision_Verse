@@ -1,853 +1,246 @@
 # 🧠 DecisionVerse
 ### Multi-Agent Decision Intelligence System
 
-**DecisionVerse** is an AI-powered decision-support system that helps users make informed decisions by evaluating multiple alternatives through specialized AI agents.
+**What if an AI didn't just recommend an option, but showed you *why* — and how the answer changes when your priorities change?**
 
-Built using **Python, LangGraph, Groq LLMs, and Streamlit**, the system combines intelligent analysis, transparent weighted scoring, financial projections, future simulations, and interactive sensitivity analysis to generate explainable recommendations.
+DecisionVerse is a locally runnable decision-support application that compares job offers through specialized AI agents. It evaluates **career growth, finances, lifestyle, and risk**, combines the results using transparent weighted scoring, estimates future financial outcomes, and explains the trade-offs behind its recommendation.
 
-> **DecisionVerse — Make Better Decisions with Multi-Agent Intelligence.**
+Built independently with **Python, LangGraph, Groq LLMs, and Streamlit**.
 
----
+> **Status:** Working prototype · Runs locally · Not publicly deployed
 
-## 🚀 Overview
-
-Making important decisions often involves evaluating several competing factors.
-
-For example, while choosing between two job offers, a person may need to consider:
-
-- Career growth and learning opportunities
-- Salary and financial savings
-- Work-life balance and flexibility
-- Job security and potential risks
-- Long-term financial outcomes
-- Personal preferences and priorities
-
-Traditional decision-making often involves manually comparing these factors.
-
-**DecisionVerse simplifies this process using a multi-agent AI architecture**, where specialized agents independently analyze different aspects of the decision.
-
-Their outputs are combined using a transparent scoring mechanism to generate a final recommendation.
-
-The system also allows users to explore future scenarios and understand how changing their priorities affects the recommendation.
+**[Explore the code](https://github.com/TanyaChauhan15/Decision_Verse)** · **[Jump to setup](#-run-locally)** · **[See how it works](#-how-it-works)**
 
 ---
 
-## ✨ Key Features
+## 📸 Product walkthrough
 
-### 🤖 1. Multi-Agent Decision Analysis
+### 1. Describe a decision in plain English
+Enter two job offers and their details, such as salary, location, role, and work arrangement.
 
-DecisionVerse uses multiple specialized AI agents, each responsible for evaluating a specific dimension of the decision.
+![DecisionVerse input interface](assets/decision-input.png)
 
-#### Career Agent
+### 2. Understand the scores
+See how each option performs on career, finance, lifestyle, and risk, along with the weights used to combine them.
 
-- Evaluates professional growth opportunities.
-- Analyzes learning potential and career development.
-- Identifies strengths and weaknesses.
-- Highlights missing information and uncertainties.
-- Generates a career score.
+![Scoring weights and agent score comparison](assets/agent-scores.png)
 
-#### Finance Agent
+### 3. Change your priorities instantly
+Adjust the importance of each factor and see the updated scores **without rerunning the AI agents**. This reuses the initial agent scores and recalculates the weighted totals.
 
-- Estimates monthly take-home salary.
-- Calculates living expenses and monthly savings.
-- Computes annual savings and savings rates.
-- Generates five-year financial projections.
-- Produces a financial score.
+![Interactive sensitivity analysis](assets/sensitivity-analysis.png)
 
-#### Lifestyle Agent
+### 4. Get a useful explanation, not just a winner
+DecisionVerse highlights trade-offs and suggests questions to investigate before making a final choice.
 
-- Evaluates work arrangements and flexibility.
-- Considers lifestyle advantages and disadvantages.
-- Identifies potential work-life balance trade-offs.
-- Generates a lifestyle score.
-
-#### Risk Agent
-
-- Identifies uncertainties associated with each option.
-- Evaluates available information about job security.
-- Highlights missing evidence.
-- Suggests risk mitigation steps.
-- Generates a heuristic risk-safety score.
-
-#### Decision Agent
-
-- Explains the final recommendation.
-- Highlights the factors influencing the decision.
-- Identifies important trade-offs.
-- Suggests practical next steps.
+![Trade-offs and recommended next steps](assets/tradeoffs-next-steps.png)
 
 ---
 
-### 📊 2. Transparent Weighted Scoring
+## ✨ What makes it different?
 
-DecisionVerse combines the individual agent scores using a weighted scoring mechanism.
+| Capability | What it does |
+| --- | --- |
+| **Specialized agents** | Evaluates career, finance, lifestyle, and risk separately instead of relying on a single general-purpose response. |
+| **Explainable scoring** | Shows factor scores, weights, overall scores, and the decision margin. |
+| **Financial projections** | Estimates take-home pay, expenses, savings, and five-year cumulative savings using adjustable assumptions. |
+| **Future scenarios** | Produces illustrative Year 1, Year 3, and Year 5 outcomes. |
+| **Sensitivity analysis** | Recalculates recommendations when priorities change, without another LLM call. |
+| **Actionable next steps** | Identifies missing information, risks, and practical follow-up questions. |
 
-The weights are dynamically determined based on the user's priorities.
+## 🏗️ How it works
 
-#### Overall Score Formula
+```mermaid
+flowchart TD
+    A[User enters decision] --> B[Supervisor Agent]
+    B --> C[Extractor Agent]
+    C --> D[Career Agent]
+    C --> E[Finance Agent]
+    C --> F[Lifestyle Agent]
+    D --> G[Analysis Aggregator]
+    E --> G
+    F --> G
+    G --> H[Risk Agent]
+    H --> I[Weighted Score Aggregator]
+    I --> J[Simulation Agent]
+    J --> K[Decision Agent]
+    K --> L[Streamlit Results Dashboard]
+    L --> M[Interactive Sensitivity Analysis]
+```
+
+**LangGraph** orchestrates the agents using a shared state. The extractor identifies the options and priorities; specialized agents evaluate each dimension; the scoring layer combines the results; and the decision agent produces an explanation grounded in the comparison.
+
+### Scoring logic
+
+Each option receives scores from 0 to 10. The overall score is a weighted sum:
 
 $$
 S = w_c C + w_f F + w_l L + w_r R
 $$
 
-Where:
-
-| Symbol | Description |
-|--------|-------------|
-| C | Career Score |
-| F | Finance Score |
-| L | Lifestyle Score |
-| R | Risk Safety Score |
-| wc | Career Weight |
-| wf | Finance Weight |
-| wl | Lifestyle Weight |
-| wr | Risk Weight |
-
-The weights satisfy:
+Here, $C$, $F$, $L$, and $R$ represent **career, finance, lifestyle, and risk-safety** scores, respectively. The weights are normalized so that:
 
 $$
 w_c + w_f + w_l + w_r = 1
 $$
 
-Each agent generates a score between **0 and 10**.
+The scoring weights reflect the user's priorities. They are visible in the UI and can be changed in the sensitivity analysis section. **Agent scores are heuristic estimates**, not objective measurements.
 
-The final score is calculated by multiplying each agent score by its corresponding weight and adding the contributions.
+### Financial model
 
-#### Example
+DecisionVerse uses deterministic calculations alongside LLM-generated analysis:
 
-Suppose the user prioritizes career growth, savings, learning, and low risk.
+- **Monthly take-home:** annual salary × estimated take-home percentage ÷ 12
+- **Monthly savings:** monthly take-home − monthly living expenses
+- **Annual savings:** monthly savings × 12
+- **Five-year projections:** apply assumed annual salary growth and living-cost inflation, then accumulate estimated annual savings
 
-The system may assign the following weights:
-
-| Factor | Weight |
-|--------|--------|
-| Career | 30% |
-| Finance | 30% |
-| Lifestyle | 10% |
-| Risk | 30% |
-
-For an option with the following scores:
-
-| Factor | Score | Weight | Contribution |
-|--------|-------|--------|--------------|
-| Career | 6.00 | 0.30 | 1.800 |
-| Finance | 9.05 | 0.30 | 2.715 |
-| Lifestyle | 6.00 | 0.10 | 0.600 |
-| Risk | 5.00 | 0.30 | 1.500 |
-
-The final score is:
-
-$$
-S = 1.800 + 2.715 + 0.600 + 1.500
-$$
-
-$$
-\boxed{S = 6.615 \approx 6.62}
-$$
-
-The application displays the individual scores, weights, contributions, and final recommendation.
-
-This makes the decision-making process transparent and interpretable.
+The app's documented default assumptions are **75% take-home pay, 8% annual salary growth, and 6% annual living-cost inflation**. Users can adjust these assumptions in the sidebar. These are simplified estimates, not predictions or guarantees.
 
 ---
 
-### 💰 3. Financial Analysis and Forecasting
+## 🧪 Example: Two job offers
 
-DecisionVerse provides a structured financial comparison of different alternatives.
+A user compares an **AI Engineer** role at StartupX (₹25 LPA, Bangalore, hybrid) with a **Data Scientist** role at MNCY (₹20 LPA, Hyderabad, office-based).
 
-For each option, the Finance Agent calculates:
+| Factor | Option A | Option B |
+| --- | ---: | ---: |
+| Career | 6.00 | 6.00 |
+| Finance | 9.05 | 8.45 |
+| Lifestyle | 6.00 | 4.00 |
+| Risk safety | 5.00 | 5.00 |
+| **Overall** | **6.62 / 10** | **6.24 / 10** |
 
-- Estimated monthly take-home salary
-- Monthly living expenses
-- Monthly savings
-- Annual savings
-- Savings rate
-- Five-year cumulative savings
+With weights of **30% career, 30% finance, 10% lifestyle, and 30% risk**, Option A ranks slightly higher by **0.38 points**. It has higher estimated absolute monthly savings (₹1,01,250 vs ₹85,000) and a higher lifestyle score, while Option B has a higher estimated savings rate (68.0% vs 64.8%).
 
-#### Configurable Financial Assumptions
-
-Users can adjust financial assumptions through the Streamlit sidebar.
-
-| Parameter | Default Value |
-|-----------|---------------|
-| Estimated Take-home Salary | 75% |
-| Annual Salary Growth | 8% |
-| Annual Living-cost Inflation | 6% |
-
-These assumptions influence financial projections and may affect the final recommendation.
-
-#### Monthly Take-home Salary
-
-$$
-\text{Monthly Take-home} =
-\frac{\text{Annual Salary} \times \text{Take-home Percentage}}{12}
-$$
-
-#### Monthly Savings
-
-$$
-\text{Monthly Savings} =
-\text{Monthly Take-home} - \text{Monthly Living Cost}
-$$
-
-#### Annual Savings
-
-$$
-\text{Annual Savings} =
-12 \times \text{Monthly Savings}
-$$
-
-#### Savings Rate
-
-$$
-\text{Savings Rate} =
-\frac{\text{Monthly Savings}}{\text{Monthly Take-home}} \times 100
-$$
-
-#### Salary Growth Projection
-
-$$
-\text{Salary}_n =
-\text{Salary}_1(1+g)^{n-1}
-$$
-
-Where:
-
-- `g` = Annual salary growth rate
-- `n` = Year number
-
-#### Living Cost Projection
-
-$$
-\text{Living Cost}_n =
-\text{Living Cost}_1(1+i)^{n-1}
-$$
-
-Where:
-
-- `i` = Annual living-cost inflation rate
-
-These calculations allow DecisionVerse to estimate future financial outcomes under different assumptions.
-
-**Note:** Financial projections are simplified estimates, not guaranteed outcomes.
+**The point isn't to claim that A is universally better:** DecisionVerse marks this as a close decision, explains the trade-offs, and recommends verifying missing information before committing. Example scores may vary between runs.
 
 ---
 
-### 🔮 4. Future Timeline Simulation
+## 🛠️ Tech stack
 
-DecisionVerse generates illustrative future scenarios for each option.
+| Technology | Role |
+| --- | --- |
+| **Python** | Application logic, financial calculations, and scoring |
+| **LangGraph** | Multi-agent workflow orchestration and shared state |
+| **Groq API + LLMs** | Natural-language analysis and explanations |
+| **Streamlit** | Interactive interface and results dashboard |
+| **Git / GitHub** | Version control and source hosting |
 
-The system analyzes three time horizons:
+## 💡 Engineering challenges
 
-- **Year 1:** Short-term outcomes
-- **Year 3:** Medium-term outcomes
-- **Year 5:** Long-term outcomes
+**Coordinating multiple agents.** I used LangGraph and a shared decision state to organize the sequence of extraction, analysis, aggregation, simulation, and recommendation.
 
-Each scenario considers four dimensions.
+**Keeping numerical outputs interpretable.** Instead of relying only on free-form LLM recommendations, I combined specialized analysis with explicit financial formulas and weighted scoring, so users can inspect the numbers behind the result.
 
-| Dimension | Analysis |
-|-----------|----------|
-| Career | Responsibilities, learning, and potential growth |
-| Finance | Annual savings and cumulative savings |
-| Lifestyle | Flexibility and work arrangements |
-| Risk | Uncertainties and potential challenges |
+**Making the interface responsive to changing preferences.** The sensitivity engine recalculates overall scores from existing agent outputs. This avoids repeating expensive LLM inference every time a user moves a slider.
 
-The Simulation Agent combines financial projections with AI-generated scenario descriptions.
-
-This helps users understand how their decisions might play out over time.
-
-These scenarios are illustrative and should not be interpreted as guaranteed predictions.
+**Handling uncertainty.** The application highlights missing evidence, uses neutral risk-safety scores when information is insufficient, and frames future scenarios as illustrative rather than guaranteed.
 
 ---
 
-### 🎛️ 5. Interactive Sensitivity Analysis
+## 🚀 Run locally
 
-One of the key features of DecisionVerse is its interactive sensitivity analysis.
+**Requirements:** Python 3.10+, Git, internet access, and a Groq API key.
 
-Users can modify the importance of different decision factors using sliders.
-
-The adjustable factors include:
-
-- Career
-- Finance
-- Lifestyle
-- Risk
-
-The system automatically normalizes the selected weights and recalculates the overall scores.
-
-#### How It Works
-
-1. The user completes the initial decision analysis.
-2. DecisionVerse stores the agent-generated scores.
-3. The user adjusts the importance sliders.
-4. The system normalizes the updated weights.
-5. Overall scores are recalculated instantly.
-6. Updated recommendations and decision margins are displayed.
-
-**Sensitivity analysis does not rerun the AI agents.**
-
-Instead, it reuses the existing agent scores, making the process fast and interactive.
-
-The dashboard displays:
-
-- Updated overall scores
-- Updated recommendation
-- Decision margin
-- Normalized weights
-- Original versus updated scores
-- Changes caused by adjusting priorities
-
-This allows users to explore how their personal preferences influence the decision.
-
-**Note:** If one option performs equally or better across every scoring category, changing nonnegative weights cannot make the other option win.
-
----
-
-### ⚖️ 6. Explainable Recommendations
-
-DecisionVerse does not simply select the option with the highest score.
-
-It also explains the reasoning behind the recommendation.
-
-The final output includes:
-
-- Recommended option
-- Overall scores
-- Decision margin
-- Recommendation strength
-- Key advantages and disadvantages
-- Financial comparisons
-- Important uncertainties
-- Recommended next steps
-
-For close decisions, the system highlights that small changes in assumptions or information may influence the result.
-
-This improves transparency and helps users make informed decisions.
-
----
-
-## 🏗️ System Architecture
-
-DecisionVerse uses **LangGraph** to orchestrate multiple agents through a shared decision state.
-
-### Multi-Agent Workflow
-
-```text
-                        USER INPUT
-                            |
-                            v
-                    SUPERVISOR AGENT
-                            |
-                            v
-                     EXTRACTOR AGENT
-                            |
-             +--------------+--------------+
-             |              |              |
-             v              v              v
-        CAREER AGENT   FINANCE AGENT   LIFESTYLE AGENT
-             |              |              |
-             +--------------+--------------+
-                            |
-                            v
-                       AGGREGATOR
-                            |
-                            v
-                        RISK AGENT
-                            |
-                            v
-                     SCORE AGGREGATOR
-                            |
-                            v
-                     SIMULATION AGENT
-                            |
-                            v
-                      DECISION AGENT
-                            |
-                            v
-                    FINAL RECOMMENDATION
-                            |
-                            v
-                     STREAMLIT DASHBOARD
-                            |
-                            v
-                    SENSITIVITY ANALYSIS
-```
-
-### Architecture Components
-
-| Component | Responsibility |
-|-----------|----------------|
-| Streamlit UI | Accepts user input and displays results |
-| Supervisor Agent | Coordinates initial decision processing |
-| Extractor Agent | Extracts options, details, and priorities |
-| Career Agent | Evaluates professional growth |
-| Finance Agent | Performs financial analysis |
-| Lifestyle Agent | Evaluates lifestyle-related factors |
-| Aggregator | Combines agent analysis results |
-| Risk Agent | Evaluates uncertainties and risks |
-| Score Aggregator | Calculates weighted scores |
-| Simulation Agent | Generates future scenarios |
-| Decision Agent | Produces final recommendations |
-| Sensitivity Engine | Recalculates scores using adjusted weights |
-
-### Shared Decision State
-
-LangGraph maintains a shared state containing:
-
-- User query
-- Extracted options
-- User priorities
-- Career analysis
-- Finance analysis
-- Lifestyle analysis
-- Risk analysis
-- Combined analysis
-- Overall scores
-- Scoring weights
-- Score breakdown
-- Simulation results
-- Final recommendation
-
-This enables agents to exchange structured information throughout the workflow.
-
----
-
-## 🛠️ Technology Stack
-
-| Technology | Purpose |
-|------------|---------|
-| Python | Core application development |
-| Streamlit | Interactive dashboard |
-| LangGraph | Multi-agent workflow orchestration |
-| Groq API | LLM inference |
-| Large Language Models | Natural language analysis and explanations |
-| Python | Financial calculations and weighted scoring |
-| Git | Version control |
-| GitHub | Repository hosting |
-
----
-
-## 📁 Project Structure
-
-The repository is organized into modular components.
-
-```text
-Decision_Verse/
-│
-├── agents/
-│   └── Specialized decision-analysis agents
-│
-├── graph/
-│   └── LangGraph workflow
-│
-├── prompts/
-│   └── Agent prompt definitions
-│
-├── rag/
-│   └── Retrieval-related components
-│
-├── state/
-│   └── Shared decision-state definitions
-│
-├── utils/
-│   └── Helper functions and sensitivity analysis
-│
-├── app.py
-├── main.py
-├── test_rag.py
-├── test_scoring.py
-├── requirements.txt
-├── .gitignore
-└── README.md
-```
-
-### Important Files
-
-| File / Directory | Description |
-|------------------|-------------|
-| `app.py` | Main Streamlit application |
-| `main.py` | Additional project entry point |
-| `agents/` | Specialized decision-analysis agents |
-| `graph/` | LangGraph workflow |
-| `state/` | Shared decision-state structure |
-| `utils/` | Utility functions and sensitivity calculations |
-| `prompts/` | Agent prompt definitions |
-| `rag/` | Retrieval-related components |
-| `test_scoring.py` | Scoring and sensitivity tests |
-| `test_rag.py` | RAG-related tests |
-| `requirements.txt` | Python dependencies |
-
----
-
-## ⚙️ Installation and Setup
-
-### Prerequisites
-
-Make sure you have:
-
-- Python 3.10 or later
-- Git
-- A Groq API key
-- An internet connection for LLM inference
-
-### Step 1: Clone the Repository
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/TanyaChauhan15/Decision_Verse.git
-```
-
-Navigate to the project directory:
-
-```bash
 cd Decision_Verse
 ```
 
-### Step 2: Create a Virtual Environment
-
-```bash
-python -m venv .venv
-```
-
-Activate the environment.
+### 2. Create and activate a virtual environment
 
 **Windows PowerShell:**
 
 ```powershell
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-**Windows Command Prompt:**
-
-```cmd
-.venv\Scripts\activate.bat
 ```
 
 **macOS / Linux:**
 
 ```bash
+python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-### Step 3: Install Dependencies
+### 3. Install dependencies
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-### Step 4: Configure the Groq API Key
+### 4. Configure your Groq API key
 
-Create a `.env` file in the root directory.
+Create a `.env` file in the project root containing a `GROQ_API_KEY` entry. To do this **without printing or committing your key**, run the following from **Windows PowerShell**:
 
-Add:
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
+```powershell
+$secret = Read-Host 'Enter your Groq API key' -AsSecureString
+$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
+try {
+    $key = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    [IO.File]::WriteAllText((Join-Path (Get-Location) '.env'), "GROQ_API_KEY=$key`n")
+} finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+}
 ```
 
-Replace the placeholder with your actual Groq API key.
+Alternatively, create `.env` manually and set `GROQ_API_KEY` to your own key. **Never commit `.env` or API credentials.**
 
-**Security:** Never upload your API key or `.env` file to GitHub.
-
-### Step 5: Run DecisionVerse
+### 5. Start the app
 
 ```bash
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
-Streamlit will display the local application address in the terminal.
+Open the local URL printed by Streamlit in your browser.
 
-Open the displayed address in your browser to access DecisionVerse.
-
----
-
-## 💻 Example Usage
-
-### Scenario: Comparing Two Job Offers
-
-Consider a user choosing between two job offers.
-
-**Option A: StartupX**
-
-- Role: AI Engineer
-- Salary: ₹25 LPA
-- Location: Bangalore
-- Work Mode: Hybrid
-
-**Option B: MNCY**
-
-- Role: Data Scientist
-- Salary: ₹20 LPA
-- Location: Hyderabad
-- Work Mode: Office
-
-**User Priorities:**
-
-- Career growth
-- Savings
-- Learning
-- Low risk
-
-### Example Input
-
-```text
-I have two job offers.
-
-Offer A is from StartupX for AI Engineer role with
-25 LPA salary in Bangalore, hybrid mode.
-
-Offer B is from MNCY for Data Scientist role with
-20 LPA salary in Hyderabad, office mode.
-
-My priorities are career growth, savings, learning,
-and low risk.
-```
-
-After entering the scenario, click **Analyze Decision**.
-
-DecisionVerse processes the input using its specialized agents and generates the comparison.
-
----
-
-## 📊 Example Results
-
-The following results illustrate one execution of DecisionVerse using the example scenario.
-
-### 1. Overall Scores
-
-| Metric | Option A | Option B |
-|--------|----------|----------|
-| Career | 6.00 | 6.00 |
-| Finance | 9.05 | 8.45 |
-| Lifestyle | 6.00 | 4.00 |
-| Risk Safety | 5.00 | 5.00 |
-| **Overall Score** | **6.62** | **6.24** |
-
-### 2. Scoring Weights
-
-| Factor | Weight |
-|--------|--------|
-| Career | 30% |
-| Finance | 30% |
-| Lifestyle | 10% |
-| Risk | 30% |
-
-### 3. Financial Comparison
-
-| Metric | Option A | Option B |
-|--------|----------|----------|
-| Annual Salary | ₹25 LPA | ₹20 LPA |
-| Monthly Take-home | ₹1,56,250 | ₹1,25,000 |
-| Monthly Living Cost | ₹55,000 | ₹40,000 |
-| Monthly Savings | ₹1,01,250 | ₹85,000 |
-| Annual Savings | ₹12,15,000 | ₹10,20,000 |
-| Savings Rate | 64.8% | 68.0% |
-| Five-Year Cumulative Savings | ₹72.79 lakh | ₹60.94 lakh |
-
-### 4. Five-Year Financial Projection
-
-**Option A**
-
-| Year | Salary (LPA) | Annual Savings | Cumulative Savings |
-|------|--------------|----------------|--------------------|
-| 1 | 25.00 | ₹12,15,000 | ₹12,15,000 |
-| 2 | 27.00 | ₹13,25,400 | ₹25,40,400 |
-| 3 | 29.16 | ₹14,45,424 | ₹39,85,824 |
-| 4 | 31.49 | ₹15,75,889 | ₹55,61,713 |
-| 5 | 34.01 | ₹17,17,682 | ₹72,79,395 |
-
-**Option B**
-
-| Year | Salary (LPA) | Annual Savings | Cumulative Savings |
-|------|--------------|----------------|--------------------|
-| 1 | 20.00 | ₹10,20,000 | ₹10,20,000 |
-| 2 | 21.60 | ₹11,11,200 | ₹21,31,200 |
-| 3 | 23.33 | ₹12,10,272 | ₹33,41,472 |
-| 4 | 25.19 | ₹13,17,880 | ₹46,59,352 |
-| 5 | 27.21 | ₹14,34,744 | ₹60,94,097 |
-
-### 5. Final Recommendation
-
-**Recommended Option: Option A**
-
-**Overall Score: 6.62 / 10**
-
-**Decision Margin: 0.38 points**
-
-**Recommendation Strength: Close Decision**
-
-Option A receives the higher overall score primarily because of:
-
-- Higher estimated absolute monthly savings
-- Greater work flexibility
-- Higher lifestyle score
-
-However, Option B has a higher savings rate.
-
-Both options receive neutral risk-safety scores because sufficient company-specific evidence is unavailable.
-
-The system therefore recommends further investigation before making the final decision.
-
-### 6. Recommended Next Steps
-
-- Review the employment contracts.
-- Clarify termination conditions.
-- Investigate company financial stability.
-- Understand promotion and career growth opportunities.
-- Compare employee benefits.
-- Evaluate long-term professional goals.
-
-**Note:** These example scores are heuristic outputs and may vary between runs.
-
----
-
-## 🔍 How DecisionVerse Works
-
-### Step 1: User Input
-
-The user enters a decision scenario in natural language.
-
-### Step 2: Information Extraction
-
-The Extractor Agent identifies:
-
-- Available options
-- Relevant details
-- User preferences
-- Decision priorities
-
-### Step 3: Specialized Agent Analysis
-
-Career, Finance, and Lifestyle Agents evaluate each option.
-
-Each agent produces structured analysis and scores.
-
-### Step 4: Risk Evaluation
-
-The Risk Agent identifies uncertainties and potential risks.
-
-### Step 5: Weighted Score Aggregation
-
-The scoring engine combines the individual scores using dynamically calculated weights.
-
-### Step 6: Future Simulation
-
-The Simulation Agent generates illustrative Year 1, Year 3, and Year 5 scenarios.
-
-### Step 7: Final Recommendation
-
-The Decision Agent generates an explanation based on the computed results.
-
-### Step 8: Sensitivity Analysis
-
-Users adjust factor weights to explore how their preferences affect the recommendation.
-
----
-
-## 🧪 Testing
-
-DecisionVerse includes tests for its scoring components.
-
-### Run Scoring Tests
+### 6. Run scoring tests
 
 ```bash
 python test_scoring.py
 ```
 
-These tests check:
-
-- Dynamic weight calculations
-- Weighted score aggregation
-- Score consistency
-- Sensitivity analysis calculations
-
-The tests help validate the deterministic scoring logic.
-
-They do not replace full end-to-end testing of the AI workflow.
+These tests cover deterministic scoring and sensitivity calculations; they are **not** a substitute for full end-to-end testing of the LLM workflow.
 
 ---
 
-## ⚠️ Limitations
+## 📂 Repository layout
 
-DecisionVerse is currently a **prototype decision-support system**.
+```text
+Decision_Verse/
+├── agents/            # Specialized analysis agents
+├── graph/             # LangGraph workflow
+├── prompts/           # Agent prompts
+├── rag/               # Retrieval-related components
+├── state/             # Shared decision state
+├── utils/             # Helpers and sensitivity calculations
+├── app.py             # Streamlit application
+├── main.py            # Additional entry point
+├── test_scoring.py    # Scoring tests
+├── test_rag.py        # Retrieval-related tests
+├── requirements.txt   # Dependencies
+└── README.md
+```
 
-Its limitations include:
+## ⚠️ Current limitations
 
-1. **Heuristic Scoring:** Agent scores are estimates rather than objectively verified measurements.
+DecisionVerse is a **prototype**, not a production decision engine. Its scores are heuristic, its conclusions depend on the completeness of user-provided information, and it does not independently verify all employer-specific claims. Financial forecasts assume simplified growth and inflation rates; future scenarios are illustrative. Sensitivity analysis changes weights, **not** the original agent evaluations. The project currently runs locally and is not publicly hosted.
 
-2. **Dependence on User Input:** The quality of the analysis depends on the completeness and accuracy of the information provided.
+## 🔭 Potential improvements
 
-3. **Missing Information:** When evidence is insufficient, the system may use neutral scores or identify uncertainty.
-
-4. **Simplified Financial Models:** Financial projections use assumptions about salary growth, take-home pay, and living-cost inflation.
-
-5. **Illustrative Simulations:** Future scenarios are not guaranteed predictions.
-
-6. **Risk Assessment:** Risk-safety scores do not represent verified probabilities of job loss or financial instability.
-
-7. **Sensitivity Analysis:** Adjusting weights recalculates scores but does not regenerate the underlying agent evaluations.
-
-8. **External Verification:** The system does not independently verify every company-specific claim.
-
-DecisionVerse is designed to **support human judgment, not replace it**.
-
----
-
-## 🔮 Future Improvements
-
-Potential enhancements include:
-
-- Integration with verified external data sources
-- More detailed risk assessment
-- Improved uncertainty estimation
-- Additional decision categories
-- Personalized scoring models
-- Multi-scenario financial forecasting
-- Historical decision tracking
-- Interactive data visualizations
-- Downloadable decision reports
-- Improved explainability
-- More comprehensive automated testing
-- Enhanced RAG-based information retrieval
+Verified external data sources, stronger uncertainty estimation, additional decision categories, historical comparison tracking, downloadable reports, improved retrieval, and broader automated end-to-end testing.
 
 ---
 
-## 🎯 Project Objective
+## 👩‍💻 Built by
 
-The primary objective of DecisionVerse is to explore how multi-agent AI systems can assist users in making complex decisions.
-
-The project demonstrates how specialized AI agents can collaborate to:
-
-- Analyze multiple alternatives
-- Evaluate competing decision factors
-- Perform structured calculations
-- Generate explainable recommendations
-- Explore future scenarios
-- Support interactive decision-making
-
-DecisionVerse emphasizes four core principles:
-
-**Explainability • Transparency • Personalization • Multi-Agent Collaboration**
-
----
-
-## 👩‍💻 Author
-
-**Tanya Chauhan**
-
-B.Tech. Aerospace Engineering  
-Minor in Computer Science and Engineering  
+**Tanya Chauhan**  
+B.Tech. Aerospace Engineering · Minor in Computer Science and Engineering  
 Indian Institute of Technology Bombay (IIT Bombay)
 
-GitHub: [TanyaChauhan15](https://github.com/TanyaChauhan15)
+**GitHub:** [TanyaChauhan15](https://github.com/TanyaChauhan15)
 
----
-
-## 📌 Conclusion
-
-DecisionVerse demonstrates how multi-agent AI systems can support structured and explainable decision-making.
-
-By combining specialized AI analysis, deterministic calculations, weighted scoring, future simulations, and interactive sensitivity analysis, the application helps users evaluate alternatives from multiple perspectives.
-
-Rather than simply generating an answer, DecisionVerse explains the factors influencing the recommendation and highlights important trade-offs.
-
-### 🧠 DecisionVerse — Make Better Decisions with Multi-Agent Intelligence.
+*DecisionVerse supports human judgment by making the reasoning behind a decision more transparent — it does not replace it.*
