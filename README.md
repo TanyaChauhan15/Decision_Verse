@@ -7,9 +7,9 @@ DecisionVerse is a locally runnable decision-support application that compares j
 
 Built independently with **Python, LangGraph, Groq LLMs, and Streamlit**.
 
-> **Status:** Working prototype · Runs locally · Not publicly deployed
+> **Status:** Working prototype · Runs locally 
 
-**[Explore the code](https://github.com/TanyaChauhan15/Decision_Verse)** · **[Jump to setup](#-run-locally)** · **[See how it works](#-how-it-works)**
+**[Explore the code](https://github.com/TanyaChauhan15/Decision_Verse)** · **[Jump to setup](#-run-locally)**
 
 ---
 
